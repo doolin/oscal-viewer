@@ -12,6 +12,36 @@ Organised into three buckets:
 2. **Dead / unreachable branches** — code that can't execute via the public API
 3. **Test infrastructure patterns** — what the harness needed to exercise each page
 
+## Also read the PRs
+
+**The GitHub PR history is the other scroll.** Each round is one PR
+with a dedicated body; reading them in order replays the session
+chronologically. The PR bodies cover material this file doesn't
+repeat:
+
+- **Coverage deltas** — per-file and global numbers before/after each round
+- **Test surface** — the cases each round covered, grouped by describe block
+- **Iteration notes** — the "I tried X, that failed because Y, so the
+  test now does Z" learnings that became patterns
+- **Residuals** — what each round left uncovered and why
+- **Running totals tables** — compounding coverage per round
+- **Proposed next step** — what I recommended next from the round-end vantage
+
+When picking up a cold session, the recommended on-ramp is:
+
+1. `.development/plans/findings.md` — original repo scan (round 1)
+2. `.development/plans/quirks.md` — this file, consolidated weirdness
+3. GitHub PRs `#1` → latest, in order — the chronological story
+4. `.development/plans/runbook.md` — how to run the dev server, sample docs
+5. `.development/plans/test-coverage-round-N.md` — per-round plan docs
+   for the rounds that had them (rounds 1-6 did, 7+ typically didn't
+   because the pattern was established)
+
+Commit messages follow the same rigour as PR bodies — each explains
+the "why" and calls out iteration notes. `git log --oneline` then
+`git show <sha>` works as a terser alternative to reading the PRs
+in the GitHub UI.
+
 ---
 
 ## 1. Product quirks (candidates for refactor)
