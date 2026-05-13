@@ -1423,3 +1423,164 @@ describe("<ProfilePage /> D1 — resolveControlParts add/remove operations", () 
     );
   });
 });
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   D2 — DropZone / URL fetch / Mobile content / Sidebar search filters
+
+   Targets uncovered branches in:
+     - include-all helpers (flat catalog with no-enhancement leaf;
+       include-all without a catalog AND without modify)
+     - mobile shell content view + back button (lines 848, 853)
+     - sidebar search filter `controlMatches` / `familyHasMatch` /
+       per-control and per-enhancement filter return-null branches
+       (lines 1003-1004, 1037, 1071)
+
+   Documented dead branches (not chased — refactor candidates):
+     - Line 732 ternary `err instanceof Error ? ... : "Failed to parse JSON"`
+       — the try block only throws `Error` (and subclasses); the false
+       branch is unreachable via the current loadFile / urlDoc paths.
+     - Line 823 `prev[id] ?? defaultCollapsed[id] ?? false` — the `?? false`
+       fallback is dead because every callsite of `toggleGroup` passes an id
+       (`family-{prefix}` or `ctrl-{cid}` with enhancements) that
+       `defaultCollapsed` always populates.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("<ProfilePage /> D2 — include-all helper fallbacks", () => {
+  it("include-all on a flat catalog whose leaf control has no enhancements covers the `c.controls ?? []` falsy branch", async () => {
+    const flatLeaf: Catalog = {
+      uuid: "cat-flat-leaf",
+      metadata: { title: "Flat Leaf" },
+      controls: [
+        {
+          id: "pm-2",
+          title: "Program Management Two",
+          props: [{ name: "label", value: "PM-2" }],
+          // intentionally no `controls` key — exercises `c.controls ?? []` undefined path
+        },
+      ],
+    };
+    const p = profileWithImports([{ href: "#cat-res", "include-all": {} }]);
+    await renderLoaded({ profile: p, catalog: flatLeaf });
+    const { count, labels } = await readSelectedControls();
+    expect(count).toBe(1);
+    expect(labels).toEqual(["PM-2"]);
+  });
+
+  it("include-all without a catalog AND without a `modify` block returns an empty selection", async () => {
+    // Covers `(profile.modify?.alters ?? [])` falsy branch — both `?` and `??`
+    // hit the nullish path.
+    const p: Profile = {
+      ...RICH_PROFILE,
+      imports: [{ href: "#cat-res", "include-all": {} }],
+    };
+    delete (p as Partial<Profile>).modify;
+    await renderLoaded({ profile: p, withCatalog: false });
+    const { count } = await readSelectedControls();
+    expect(count).toBe(0);
+  });
+});
+
+describe("<ProfilePage /> D2 — mobile content view + back button", () => {
+  it("tapping a leaf control on the mobile drill-down opens the content view; the back button returns to the drill-down", async () => {
+    const utils = await renderLoaded({ mobile: true });
+
+    // Mobile root shows family rows as branches. Tap → drill in.
+    fireEvent.click(screen.getAllByText(/Identification and Authentication/)[0]);
+    await waitFor(() => expect(screen.getAllByText("IA-5").length).toBeGreaterThan(0));
+
+    // IA-5 is a leaf control (no enhancements) — taps invoke onSelect →
+    // mobileNavigate → setView + setMobileShowContent(true). AC-1 wouldn't
+    // work here because ac-1.1 makes it a branch.
+    fireEvent.click(screen.getAllByText("IA-5")[0]);
+
+    // Content view renders the ControlModView for ac-1. The "← Back" mobile
+    // top-bar button (line 853) appears and its onClick is the anonymous
+    // function we're trying to cover.
+    await waitFor(() => {
+      const backBtn = Array.from(utils.container.querySelectorAll("button"))
+        .find((b) => /Back/.test(b.textContent || ""));
+      expect(backBtn).toBeDefined();
+    });
+
+    const backBtn = Array.from(utils.container.querySelectorAll("button"))
+      .find((b) => /Back/.test(b.textContent || ""))!;
+    fireEvent.click(backBtn);
+
+    // After back, mobileShowContent → false. The drill-down re-renders at
+    // the same mobilePath the user drilled to (we don't reset the path).
+    // So we're back at the IA family page in the drill-down. The mobile
+    // top-bar Back button is no longer present (only on the content view);
+    // IA-5 is visible again as a drill-down row.
+    await waitFor(() => {
+      const stillContentBack = Array.from(utils.container.querySelectorAll("button"))
+        .some((b) => /^← Back$/.test((b.textContent || "").trim()));
+      expect(stillContentBack).toBe(false);
+    });
+    expect(screen.queryAllByText("IA-5").length).toBeGreaterThan(0);
+  });
+});
+
+describe("<ProfilePage /> D2 — sidebar search filter edge cases", () => {
+  it("search by control label (not id) matches via `controlLabel(...).includes(...)`", async () => {
+    const utils = await renderLoaded();
+    // Search "(1)" matches the rendered label "AC-1(1)" but NOT the raw id
+    // "ac-1.1" — exercises the `controlLabel().includes()` fallback at
+    // line 1004. Importantly: OverviewView's "Control Families" card also
+    // lists family names without honoring the filter, so we scope all
+    // assertions to the sidebar `<nav>` element.
+    const search = screen.getByPlaceholderText("Search controls");
+    fireEvent.change(search, { target: { value: "(1)" } });
+
+    const nav = utils.container.querySelector("nav") as HTMLElement;
+    expect(nav).not.toBeNull();
+    // AC family row stays in the sidebar because its enhancement matches by label.
+    expect(nav.textContent).toMatch(/Access Control/);
+    // IA family row is hidden in the sidebar because no IA control matches "(1)".
+    expect(nav.textContent).not.toMatch(/Identification and Authentication/);
+  });
+
+  it("a control whose id does not match the search is filtered out within a family that does match", async () => {
+    // Construct a profile that selects ac-1, ac-1.1, AND ac-2 so the AC
+    // family has multiple base controls; search "ac-2" passes family match
+    // (via some(controlMatches)) but filters ac-1 out at L1037.
+    const p = profileWithImports([
+      { href: "#cat-res", "include-controls": [{ "with-ids": ["ac-1", "ac-1.1", "ac-2"] }] },
+    ]);
+    const utils = await renderLoaded({ profile: p });
+
+    // Expand the AC family by clicking its sidebar row — `[0]` is the
+    // sidebar nav row (rendered before OverviewView's family list in DOM).
+    fireEvent.click(screen.getAllByText(/Access Control/)[0]);
+    // After the click ac-1 and ac-2 rows should be visible.
+    await waitFor(() =>
+      expect(screen.getAllByText("AC-1").length).toBeGreaterThan(0),
+    );
+    expect(screen.getAllByText("AC-2").length).toBeGreaterThan(0);
+
+    const search = screen.getByPlaceholderText("Search controls");
+    fireEvent.change(search, { target: { value: "ac-2" } });
+
+    // The sidebar after filtering: AC family row visible (passes
+    // familyHasMatch via some(controlMatches)), AC-2 row visible (matches
+    // controlMatches), AC-1 row filtered out via L1037.
+    const nav = utils.container.querySelector("nav") as HTMLElement;
+    expect(nav.textContent).toMatch(/Access Control/);
+    expect(nav.textContent).toMatch(/AC-2/);
+    // AC-1 (the standalone label) is gone from the sidebar nav. The
+    // OverviewView outside `<nav>` may still reference families but is
+    // out of scope here.
+    expect(nav.textContent).not.toMatch(/\bAC-1\b/);
+  });
+
+  // L1071 enhancement-filter return-null branch is STRUCTURALLY UNREACHABLE:
+  // every enhancement id `X.Y` contains its parent id `X` as a substring, and
+  // controlLabel(X.Y) = "X(Y)" likewise contains "X". So any search term that
+  // matches the parent via id OR label is guaranteed to also match the
+  // enhancement. The only path to hit this branch would be a search that
+  // matches the parent but not the enhancement, which the current
+  // `controlMatches` implementation (id-substring + label-substring) cannot
+  // produce. Documented in quirks.md as a refactor candidate — if/when
+  // controlMatches grows a title-based or class-based predicate, this branch
+  // becomes reachable.
+});
+
