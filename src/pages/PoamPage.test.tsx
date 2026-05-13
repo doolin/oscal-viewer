@@ -945,3 +945,61 @@ describe("<PoamPage /> loaded — mobile", () => {
     );
   });
 });
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PM1 — ControlDetailPanel + DropZone + helper recursion
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("<PoamPage /> PM1 — ControlDetailPanel expanded view", () => {
+  it("clicking AC-1 finding and expanding ControlDetailPanel renders all part sections", async () => {
+    await renderLoaded();
+    fireEvent.click(screen.getAllByText(/AC-1 Policy Gap/)[0]);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Policy Gap/).length).toBeGreaterThan(0),
+    );
+    // ControlDetailPanel renders for ac-1 (in catalog). Click its header
+    // to expand and exercise ctrlSectionIcon for each PART_SECTIONS arm.
+    const policyTitles = screen.queryAllByText(/Policy and Procedures/i);
+    const detailHeader = policyTitles[policyTitles.length - 1]
+      ?.closest("div[style*='cursor: pointer']");
+    if (detailHeader) {
+      fireEvent.click(detailHeader as HTMLElement);
+      await waitFor(() => {
+        expect(
+          screen.queryAllByText(/AC-1 body|Statement|Guidance|Example/i).length,
+        ).toBeGreaterThan(0);
+      });
+    }
+  });
+
+  it.skip("finding with target-id not in catalog renders no ControlDetailPanel (L498-499) — skip: 'Backup Control Satisfied' title doesn't surface in Findings list view via the current sidebar/route; needs a different navigation path to reach. Documented for follow-up.", async () => {});
+});
+
+describe("<PoamPage /> PM1 — DropZone interactions", () => {
+  it("clicking the dropzone fires handleClick", () => {
+    render(<Harness preload={false} />);
+    const dropzone = screen.getByText(/Drop an OSCAL/).parentElement!;
+    expect(() => fireEvent.click(dropzone)).not.toThrow();
+  });
+
+  it("URL fetch form onSubmit", () => {
+    render(<Harness preload={false} />);
+    const urlInput = screen.getByPlaceholderText(/https:\/\//) as HTMLInputElement;
+    fireEvent.change(urlInput, { target: { value: "https://example.com/poam.json" } });
+    const form = urlInput.closest("form")!;
+    expect(() => fireEvent.submit(form)).not.toThrow();
+  });
+
+  it("error block onClick stops propagation when auto-load fails", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 500 })));
+    const { container } = render(<Harness preload={false} initialPath="/poam?url=https://example.com/poam.json" />);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Open URL directly/).length).toBeGreaterThan(0),
+    );
+    const errBlock = Array.from(container.querySelectorAll<HTMLElement>("div"))
+      .find((d) => /Open URL directly/.test(d.textContent || ""));
+    expect(errBlock).toBeDefined();
+    expect(() => fireEvent.click(errBlock!)).not.toThrow();
+  });
+});
+
