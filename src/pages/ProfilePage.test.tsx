@@ -642,3 +642,218 @@ describe("<ProfilePage /> edge cases", () => {
     ).toBeGreaterThan(0);
   });
 });
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   controlIds collector — current (incomplete) behavior
+
+   These tests lock in what the controlIds collector at ProfilePage.tsx:748-788
+   actually does today. The OSCAL Profile spec defines three include-controls
+   mechanisms (`with-ids`, `matching.pattern` globs) plus exclude-controls;
+   the current implementation honors only `with-ids` on `include-controls`
+   and silently drops the rest.
+
+   Per `.development/plans/quirks.md` section 1 — these are real spec-
+   conformance bugs queued for a follow-on fix. The tests below ASSERT the
+   buggy behavior so the fix shows up as a clear, scoped failure set when
+   it lands. Do not "correct" these expectations — change the product code
+   instead and watch them flip.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/** Navigate the loaded Profile page to the Imports view and return the
+ *  rendered Selected Control IDs count + ordered list of displayed labels. */
+async function readSelectedControls(): Promise<{ count: number; labels: string[] }> {
+  fireEvent.click(screen.getByText("Imports"));
+  await waitFor(() => {
+    expect(screen.getAllByText(/Selected Control IDs/).length).toBeGreaterThan(0);
+  });
+  const label = screen.getAllByText(/Selected Control IDs/)[0];
+  const m = label.textContent?.match(/\((\d+)\)/);
+  const count = m ? Number(m[1]) : NaN;
+  // SectionLabel renders <div>{children}</div>; the chips container is its
+  // next sibling (a flex wrap div with one <span> per id).
+  const chipsContainer = label.nextElementSibling as HTMLElement | null;
+  const labels = chipsContainer
+    ? Array.from(chipsContainer.querySelectorAll("span"))
+        .map((s) => s.textContent || "")
+        .filter((t) => t.length > 0)
+    : [];
+  return { count, labels };
+}
+
+function profileWithImports(imports: any[], extras: Partial<typeof RICH_PROFILE> = {}): Profile {
+  return { ...RICH_PROFILE, ...extras, imports };
+}
+
+describe("<ProfilePage /> controlIds — matching patterns (BUG: currently dropped)", () => {
+  it("BUG: `matching.pattern: ac-*` is silently ignored — selection is empty when only matching is set", async () => {
+    const p = profileWithImports([
+      { href: "#cat-res", "include-controls": [{ matching: [{ pattern: "ac-*" }] }] },
+    ]);
+    await renderLoaded({ profile: p });
+    const { count } = await readSelectedControls();
+    // SPEC: count should be 3 (ac-1, ac-1.1, ac-2). Current implementation:
+    // collector only reads `with-ids`, so matching never contributes.
+    expect(count).toBe(0);
+  });
+
+  it("BUG: `with-ids` works but the `matching` half of the same clause is dropped", async () => {
+    const p = profileWithImports([
+      {
+        href: "#cat-res",
+        "include-controls": [
+          { "with-ids": ["ac-1"], matching: [{ pattern: "ac-*" }] },
+        ],
+      },
+    ]);
+    await renderLoaded({ profile: p });
+    const { count, labels } = await readSelectedControls();
+    // SPEC: count should be 3 (ac-1 + ac-1.1 + ac-2 via matching, deduped).
+    // Current: only `with-ids` contributes → just ac-1.
+    expect(count).toBe(1);
+    expect(labels).toEqual(["AC-1"]);
+  });
+
+  it("BUG: a matching-only clause with no with-ids contributes nothing alongside a working with-ids clause", async () => {
+    const p = profileWithImports([
+      {
+        href: "#cat-res",
+        "include-controls": [
+          { matching: [{ pattern: "ia-*" }] }, // dropped
+          { "with-ids": ["ac-1"] },             // kept
+        ],
+      },
+    ]);
+    await renderLoaded({ profile: p });
+    const { count, labels } = await readSelectedControls();
+    // SPEC: ac-1 + ia-5 = 2. Current: just ac-1.
+    expect(count).toBe(1);
+    expect(labels).toEqual(["AC-1"]);
+  });
+});
+
+describe("<ProfilePage /> controlIds — exclude-controls (BUG: currently ignored)", () => {
+  it("BUG: `exclude-controls[].with-ids` does not subtract from the include set", async () => {
+    const p = profileWithImports([
+      {
+        href: "#cat-res",
+        "include-controls": [{ "with-ids": ["ac-1", "ac-1.1", "ia-5"] }],
+        "exclude-controls": [{ "with-ids": ["ac-1.1"] }],
+      },
+    ]);
+    await renderLoaded({ profile: p });
+    const { count, labels } = await readSelectedControls();
+    // SPEC: exclude ac-1.1 → count 2. Current: excludes are silently dropped
+    // → count 3 with ac-1.1 still present.
+    expect(count).toBe(3);
+    expect(labels).toContain("AC-1(1)");
+  });
+
+  it("BUG: `exclude-controls[].matching` against include-all does not narrow the universe", async () => {
+    const p = profileWithImports([
+      {
+        href: "#cat-res",
+        "include-all": {},
+        "exclude-controls": [{ matching: [{ pattern: "ac-*" }] }],
+      },
+    ]);
+    await renderLoaded({ profile: p });
+    const { count, labels } = await readSelectedControls();
+    // SPEC: include-all minus ac-* → just ia-5 (count 1). Current: exclude
+    // is dropped → full catalog (4: ac-1, ac-1.1, ac-2, ia-5).
+    expect(count).toBe(4);
+    expect(labels).toContain("AC-1");
+    expect(labels).toContain("IA-5");
+  });
+});
+
+describe("<ProfilePage /> controlIds — current behavior edge cases", () => {
+  it("returns an empty selection when an import has neither include-all nor include-controls", async () => {
+    const p = profileWithImports([{ href: "#cat-res" }]);
+    await renderLoaded({ profile: p });
+    const { count } = await readSelectedControls();
+    expect(count).toBe(0);
+  });
+
+  it("a clause with no `with-ids` key contributes nothing to the include set", async () => {
+    const p = profileWithImports([
+      {
+        href: "#cat-res",
+        "include-controls": [
+          {},                                // empty clause — covers the `if (ic["with-ids"])` false branch
+          { "with-ids": ["ia-5"] },          // working clause
+        ],
+      },
+    ]);
+    await renderLoaded({ profile: p });
+    const { count, labels } = await readSelectedControls();
+    expect(count).toBe(1);
+    expect(labels).toEqual(["IA-5"]);
+  });
+
+  it("retains duplicates when the same id appears in two imports' with-ids (no dedup)", async () => {
+    const p = profileWithImports([
+      { href: "#cat-1", "include-controls": [{ "with-ids": ["ac-1", "ia-5"] }] },
+      { href: "#cat-2", "include-controls": [{ "with-ids": ["ac-1"] }] },
+    ]);
+    await renderLoaded({ profile: p });
+    const { count, labels } = await readSelectedControls();
+    // Current collector does not de-dup. ac-1 appears twice in the array,
+    // and the rendered count reflects that. Note: the chip list renders one
+    // span per id (React keys by id), so the visible chip count differs
+    // from the numeric count. The count is the load-bearing assertion.
+    expect(count).toBe(3);
+    // De-dup is also queued in quirks.md as part of the same spec-fix round.
+    expect(new Set(labels).size).toBeLessThanOrEqual(2);
+  });
+
+  it("include-all walks groups recursively when collecting the catalog universe", async () => {
+    // Exercises the `for (const sg of g.groups ?? []) collectFromGroup(sg)`
+    // branch of the include-all collector — a nested group with a leaf
+    // control should still be picked up.
+    const nestedCatalog: Catalog = {
+      uuid: "cat-nested",
+      metadata: { title: "Nested" },
+      groups: [
+        {
+          id: "outer",
+          title: "Outer",
+          groups: [
+            {
+              id: "inner",
+              title: "Inner",
+              controls: [{ id: "sr-1", title: "Supply Risk", props: [{ name: "label", value: "SR-1" }] }],
+            },
+          ],
+        },
+      ],
+    };
+    const p = profileWithImports([{ href: "#cat-res", "include-all": {} }]);
+    await renderLoaded({ profile: p, catalog: nestedCatalog });
+    const { count, labels } = await readSelectedControls();
+    expect(count).toBe(1);
+    expect(labels).toEqual(["SR-1"]);
+  });
+
+  it("include-all walks the top-level `controls` array when the catalog has no groups", async () => {
+    // Exercises the second collection loop — for catalogs that expose a
+    // top-level `controls` array instead of `groups`.
+    const flatCatalog: Catalog = {
+      uuid: "cat-flat",
+      metadata: { title: "Flat Catalog" },
+      controls: [
+        {
+          id: "pm-1",
+          title: "Top-Level Control",
+          props: [{ name: "label", value: "PM-1" }],
+          controls: [{ id: "pm-1.1", title: "Enhancement", props: [{ name: "label", value: "PM-1(1)" }] }],
+        },
+      ],
+    };
+    const p = profileWithImports([{ href: "#cat-res", "include-all": {} }]);
+    await renderLoaded({ profile: p, catalog: flatCatalog });
+    const { count, labels } = await readSelectedControls();
+    expect(count).toBe(2);
+    expect(labels).toContain("PM-1");
+    expect(labels).toContain("PM-1(1)");
+  });
+});
