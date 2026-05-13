@@ -341,8 +341,7 @@ function riskSeveritySortKey(risk: Risk): number {
 
 /* ── Catalog lookup helpers ── */
 
-// @ts-ignore: reserved for future catalog enrichment
-function findCatalogControl(catalog: OscalCatalog | null, controlId: string): CatalogControl | undefined {
+export function findCatalogControl(catalog: OscalCatalog | null, controlId: string): CatalogControl | undefined {
   if (!catalog) return undefined;
   function searchGroup(g: CatalogGroup): CatalogControl | undefined {
     for (const c of g.controls ?? []) {
@@ -370,8 +369,7 @@ function findCatalogControl(catalog: OscalCatalog | null, controlId: string): Ca
   return undefined;
 }
 
-// @ts-ignore: reserved for future catalog enrichment
-function buildCatalogParamMap(catalog: OscalCatalog | null, control: CatalogControl): Record<string, CatalogParam> {
+export function buildCatalogParamMap(catalog: OscalCatalog | null, control: CatalogControl): Record<string, CatalogParam> {
   const map: Record<string, CatalogParam> = {};
   if (catalog) {
     function searchParent(g: CatalogGroup): CatalogControl | undefined {
@@ -396,7 +394,7 @@ function buildCatalogParamMap(catalog: OscalCatalog | null, control: CatalogCont
   return map;
 }
 
-function renderCatalogParamText(param: CatalogParam, paramMap: Record<string, CatalogParam>): string {
+export function renderCatalogParamText(param: CatalogParam, paramMap: Record<string, CatalogParam>): string {
   if (param.select) {
     const howMany = param.select["how-many"];
     const prefix = howMany === "one-or-more" ? "Selection (one or more)" : "Selection";
@@ -407,7 +405,7 @@ function renderCatalogParamText(param: CatalogParam, paramMap: Record<string, Ca
   return `[Assignment: ${label}]`;
 }
 
-function resolveCatalogInlineParams(text: string, paramMap: Record<string, CatalogParam>): string {
+export function resolveCatalogInlineParams(text: string, paramMap: Record<string, CatalogParam>): string {
   return text.replace(/\{\{\s*insert:\s*param\s*,\s*([^}]+?)\s*\}\}/g, (_match, id: string) => {
     const param = paramMap[id.trim()];
     if (!param) return `[Assignment: ${id.trim()}]`;
@@ -415,7 +413,7 @@ function resolveCatalogInlineParams(text: string, paramMap: Record<string, Catal
   });
 }
 
-function getCatalogLabel(props?: { name: string; value: string; class?: string }[]): string {
+export function getCatalogLabel(props?: { name: string; value: string; class?: string }[]): string {
   if (!props) return "";
   const lbl = props.find(p => p.name === "label" && p.class !== "zero-padded");
   return lbl?.value ?? props.find(p => p.name === "label")?.value ?? "";
