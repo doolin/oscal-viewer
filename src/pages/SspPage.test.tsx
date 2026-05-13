@@ -1010,3 +1010,381 @@ describe("<SspPage /> remarks expansion and impl status variants", () => {
     expect(screen.getAllByText(/Dev Tool/).length).toBeGreaterThan(0);
   });
 });
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Service-component hierarchy + relationships (upstream #53 port)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+// HIER_SSP exercises every branch of buildComponentHierarchy, ComponentRelationships,
+// and the new parseSsp links pass. Layout:
+//   svc-host (service)  ──provided-by──> sw-splunk, sw-postgres   [pass 1, multi-child + new/existing array]
+//                       ──uses-network──> net-vpc                  [relationship chip]
+//                       ──uses-service──> svc-archive              [relationship chip]
+//                       ──depends-on────> sw-splunk                [relationship chip]
+//                       ──depends-on────> unknown-comp             [relationship chip filter: unknown UUID dropped]
+//                       ──provided-by──> unknown-comp              [hierarchy: unknown UUID skip]
+//                       ──provided-by──> svc-host (self)           [hierarchy: self-reference skip]
+//                       ──provided-by──> "" (empty href)           [hierarchy: hrefToUuid empty-string branch]
+//                       ──no-rel link with href "bare-uuid"        [parseSsp: l.rel falsy → undefined; also tests no-# branch of hrefToUuid via filter]
+//                       ──{} (all falsy)                           [parseSsp: l.href/l.rel/l.text all falsy]
+//   svc-conflict (service) ──provided-by──> sw-splunk              [duplicate provided-by — second skipped]
+//                          ──used-by──────> sw-splunk              [pass-2 conflict — provided-by wins]
+//   svc-archive (service)  ──used-by──────> sw-archive             [pass 2 first-time used-by claim]
+//                          ──used-by──────> sw-archive             [pass-2 duplicate — second skipped]
+//                          ──used-by──────> unknown                [pass-2 unknown skip]
+//                          ──used-by──────> svc-archive (self)     [pass-2 self skip]
+//                          ──used-by──────> "" (empty href)        [pass-2 empty-href skip]
+//                          ──reference link to docs                [parseSsp: ignored rel; non-target rel branch]
+//   sw-splunk (software)   ──provided-by──> svc-host               [pass-1 non-service-parent skip]
+//                          ──used-by──────> svc-host               [pass-2 non-service-parent skip]
+//   sw-postgres (software) — no links (covers parseSsp `c.links || []` empty-array path within hierarchy fixture)
+//   sw-archive (software, title="")        [chip title-fallback to uuid slice]
+//   net-vpc (network)
+//   sw-no-links (software, no links key)   [parseSsp: `c.links || []` undefined fallback]
+
+const HIER_SSP = {
+  ...RICH_SSP,
+  uuid: "ssp-hier",
+  metadata: { ...RICH_SSP.metadata, title: "Hierarchy SSP" },
+  "system-implementation": {
+    ...RICH_SSP["system-implementation"],
+    components: [
+      {
+        uuid: "svc-host",
+        type: "service",
+        title: "Hosting Service",
+        description: "Owns Splunk and Postgres.",
+        status: { state: "operational" },
+        links: [
+          { href: "#sw-splunk",      rel: "provided-by",  text: "Splunk on this host" },
+          { href: "#sw-postgres",    rel: "provided-by" },
+          { href: "#net-vpc",        rel: "uses-network", text: "Primary VPC" },
+          { href: "#svc-archive",    rel: "uses-service" },
+          { href: "#sw-splunk",      rel: "depends-on" },
+          { href: "#sw-archive",     rel: "depends-on" },        // target.title="" → chip uuid-slice fallback (line 2129)
+          { href: "sw-postgres",     rel: "depends-on" },        // href has no `#` → hrefToUuid falsy branch (line 1241)
+          { href: "#unknown-comp",   rel: "depends-on" },
+          { href: "#unknown-comp",   rel: "provided-by" },
+          { href: "#svc-host",       rel: "provided-by" },
+          { href: "",                rel: "provided-by" },
+          { href: "bare-uuid" }, // no rel
+          {},                    // all falsy
+        ],
+      },
+      {
+        uuid: "svc-conflict",
+        type: "service",
+        title: "Conflicting Service",
+        description: "Tries to claim sw-splunk too.",
+        status: { state: "operational" },
+        links: [
+          { href: "#sw-splunk", rel: "provided-by" },
+          { href: "#sw-splunk", rel: "used-by" },
+        ],
+      },
+      {
+        uuid: "svc-archive",
+        type: "service",
+        title: "Archive Service",
+        description: "Used-by claim on sw-archive.",
+        status: { state: "operational" },
+        links: [
+          { href: "#sw-archive",   rel: "used-by" },
+          { href: "#sw-archive",   rel: "used-by" },
+          { href: "#unknown-comp", rel: "used-by" },
+          { href: "#svc-archive",  rel: "used-by" },
+          { href: "",              rel: "used-by" },
+          { href: "https://docs.example/archive", rel: "reference", text: "Docs" },
+        ],
+      },
+      {
+        uuid: "sw-splunk",
+        type: "software",
+        title: "Splunk Enterprise (Hier)",
+        description: "SIEM.",
+        status: { state: "operational" },
+        links: [
+          { href: "#svc-host", rel: "provided-by" },
+          { href: "#svc-host", rel: "used-by" },
+        ],
+      },
+      {
+        uuid: "sw-postgres",
+        type: "software",
+        title: "Postgres",
+        description: "DB.",
+        status: { state: "operational" },
+        links: [],
+      },
+      {
+        uuid: "sw-archive",
+        type: "software",
+        title: "", // empty — forces uuid-slice fallback on the relationship chip label
+        description: "Cold storage.",
+        status: { state: "operational" },
+        links: [],
+      },
+      {
+        uuid: "net-vpc",
+        type: "network",
+        title: "Primary VPC",
+        description: "Network",
+        status: { state: "operational" },
+        links: [],
+      },
+      {
+        uuid: "sw-no-links",
+        type: "software",
+        title: "No-Links Component",
+        description: "Tests the c.links fallback.",
+        status: { state: "operational" },
+        // intentionally no `links` key
+      },
+    ],
+  },
+};
+
+describe("<SspPage /> service-component hierarchy (upstream #53)", () => {
+  /** Click into Components view and return the sidebar nav item DOM nodes
+   *  for every component (by depth-tagged paddingLeft we can verify nesting). */
+  async function openComponents() {
+    await renderLoaded({ ssp: HIER_SSP });
+    fireEvent.click(screen.getAllByText(/System Implementation/i)[0]);
+    fireEvent.click(screen.getAllByText(/^Components$/)[0]);
+  }
+
+  /** Find the desktop sidebar nav row whose label matches `label`. React inlines
+   *  the row's `paddingLeft` with the base style's other padding values, so the
+   *  serialized attribute is the four-value shorthand `padding: T R B L` — we
+   *  scan parents until we find one whose style declares a four-value `padding:`
+   *  (the row itself) and return it. */
+  function sidebarRowFor(label: string | RegExp): HTMLElement {
+    const matches = screen.getAllByText(label);
+    for (const m of matches) {
+      let n: HTMLElement | null = m;
+      while (n) {
+        const style = n.getAttribute("style") || "";
+        if (/padding:\s*\d+px\s+\d+px\s+\d+px\s+\d+px/.test(style)) return n;
+        if (/padding-left:\s*\d+px/.test(style)) return n;
+        n = n.parentElement;
+      }
+    }
+    throw new Error(`No sidebar row found for ${label}`);
+  }
+
+  /** Return the left padding (px) of a sidebar row. Reads either the four-value
+   *  `padding: T R B L` shorthand or the standalone `padding-left:` form. The
+   *  two-value form `padding: 7px 12px` indicates depth=0 (left = 12). */
+  function paddingLeftPx(el: HTMLElement): number {
+    const style = el.getAttribute("style") || "";
+    const four = style.match(/padding:\s*\d+px\s+\d+px\s+\d+px\s+(\d+)px/);
+    if (four) return Number(four[1]);
+    const two = style.match(/padding:\s*\d+px\s+(\d+)px(?!\s*\d+px)/);
+    if (two) return Number(two[1]);
+    const direct = style.match(/padding-left:\s*(\d+)px/);
+    return direct ? Number(direct[1]) : 0;
+  }
+
+  /** After landing in System Implementation → Components, click a service-
+   *  component row so its nested children become visible. (Default-collapsed.) */
+  function expandService(label: string | RegExp) {
+    fireEvent.click(screen.getAllByText(label)[0]);
+  }
+
+  /* ── parseSsp links pass ────────────────────────────────────────────── */
+
+  it("parseSsp accepts components without a links key (c.links || [] fallback)", async () => {
+    await openComponents();
+    expect(screen.getAllByText(/No-Links Component/).length).toBeGreaterThan(0);
+  });
+
+  it("parseSsp tolerates link objects where href/rel/text are all missing", async () => {
+    // Renders without throwing — the {} link in svc-host's links is parsed to
+    // { href: "", rel: undefined, text: undefined } and then dropped by every
+    // downstream filter. The component still shows up in the sidebar.
+    await openComponents();
+    expect(screen.getAllByText(/Hosting Service/).length).toBeGreaterThan(0);
+  });
+
+  /* ── buildComponentHierarchy ────────────────────────────────────────── */
+
+  it("nests provided-by children beneath the service parent at depth+1", async () => {
+    await openComponents();
+    expandService(/Hosting Service/);
+    const parent = sidebarRowFor(/Hosting Service/);
+    const childA = sidebarRowFor(/Splunk Enterprise \(Hier\)/);
+    const childB = sidebarRowFor(/^Postgres$/);
+    expect(paddingLeftPx(childA)).toBe(paddingLeftPx(parent) + 16);
+    expect(paddingLeftPx(childB)).toBe(paddingLeftPx(parent) + 16);
+  });
+
+  it("nests used-by children under the service when no provided-by claim exists", async () => {
+    await openComponents();
+    expandService(/Archive Service/);
+    const parent = sidebarRowFor(/Archive Service/);
+    const child = sidebarRowFor(/sw-archi/); // uuid-slice fallback shown because title=""
+    expect(paddingLeftPx(child)).toBe(paddingLeftPx(parent) + 16);
+  });
+
+  it("provided-by wins over used-by on conflict (sw-splunk nests under svc-host, not svc-conflict)", async () => {
+    await openComponents();
+    expandService(/Hosting Service/);
+    const host = sidebarRowFor(/Hosting Service/);
+    const conflict = sidebarRowFor(/Conflicting Service/);
+    const child = sidebarRowFor(/Splunk Enterprise \(Hier\)/);
+    // sw-splunk is one level deeper than svc-host (its provided-by parent).
+    expect(paddingLeftPx(child)).toBe(paddingLeftPx(host) + 16);
+    // svc-conflict's used-by claim on sw-splunk was rejected, so svc-conflict
+    // has zero children and renders without a childCount badge. svc-host shows
+    // childCount=2.
+    const hostBadge = host.querySelector("span:last-of-type");
+    const conflictBadge = conflict.querySelector("span:last-of-type");
+    expect(hostBadge?.textContent).toBe("2");
+    expect(conflictBadge?.textContent).not.toBe("1");
+    // DOM order: sw-splunk follows svc-host immediately, not svc-conflict.
+    const navChildren = Array.from(host.parentElement!.children);
+    expect(navChildren.indexOf(child)).toBeGreaterThan(navChildren.indexOf(host));
+    expect(navChildren.indexOf(child)).toBeLessThan(navChildren.indexOf(conflict));
+  });
+
+  it("ignores self-referential provided-by links (svc-host does not nest under itself)", async () => {
+    await openComponents();
+    const host = sidebarRowFor(/Hosting Service/);
+    // svc-host is a root component — its depth equals the depth of other
+    // unclaimed services like svc-conflict (also a root).
+    const conflict = sidebarRowFor(/Conflicting Service/);
+    expect(paddingLeftPx(host)).toBe(paddingLeftPx(conflict));
+  });
+
+  it("ignores unknown UUIDs in provided-by and used-by links", async () => {
+    await openComponents();
+    // No "unknown-comp" entry appears in the sidebar.
+    expect(screen.queryByText(/unknown-comp/)).toBeNull();
+  });
+
+  it("skips claims when the carrier component is not type=service", async () => {
+    // sw-splunk has provided-by + used-by links pointing at svc-host. Because
+    // sw-splunk is type=software, neither claim runs — svc-host stays root.
+    await openComponents();
+    const host = sidebarRowFor(/Hosting Service/);
+    // sw-splunk itself is nested under svc-host (the reverse direction, claimed by svc-host).
+    // The thing we're asserting: svc-host's depth is root-component depth, not nested.
+    const archive = sidebarRowFor(/Archive Service/);
+    expect(paddingLeftPx(host)).toBe(paddingLeftPx(archive));
+  });
+
+  it("emits parent service with a childCount badge equal to its claimed children", async () => {
+    await openComponents();
+    const hostRow = sidebarRowFor(/Hosting Service/);
+    // childCount appears as a badge span inside the row.
+    const badge = hostRow.querySelector("span:last-of-type");
+    // svc-host claims sw-splunk and sw-postgres → 2 children.
+    expect(badge?.textContent).toBe("2");
+  });
+
+  it("emits svc-archive with childCount=1 (single used-by claim)", async () => {
+    await openComponents();
+    const row = sidebarRowFor(/Archive Service/);
+    const badge = row.querySelector("span:last-of-type");
+    expect(badge?.textContent).toBe("1");
+  });
+
+  /* ── ComponentRelationships card ────────────────────────────────────── */
+
+  async function openHostDetail() {
+    await openComponents();
+    fireEvent.click(screen.getAllByText(/Hosting Service/)[0]);
+  }
+
+  it("renders the Relationships card with depends-on, uses-service, uses-network groups", async () => {
+    await openHostDetail();
+    await waitFor(() => {
+      expect(screen.getAllByText(/Relationships/).length).toBeGreaterThan(0);
+    });
+    expect(screen.getAllByText(/Depends On/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Uses Service/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Uses Network/).length).toBeGreaterThan(0);
+  });
+
+  it("renders one chip per resolved target component in each group", async () => {
+    await openHostDetail();
+    await waitFor(() => screen.getAllByText(/Relationships/));
+    // depends-on → sw-splunk (resolved) + unknown-comp (dropped). Only the Splunk chip.
+    // The chip text comes from target.title, which for sw-splunk is
+    // "Splunk Enterprise (Hier)". The same string appears in the sidebar nav row;
+    // the chip is the additional occurrence under the relationships card.
+    expect(screen.getAllByText(/Splunk Enterprise \(Hier\)/).length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText(/Primary VPC/).length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText(/Archive Service/).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("falls back to a uuid slice when the target component title is empty", async () => {
+    // svc-host has `{ href: "#sw-archive", rel: "depends-on" }`, and sw-archive
+    // has title="". The depends-on chip should render the first 8 chars of the
+    // target's uuid (covers the `target.title || target.uuid.slice(0, 8)`
+    // fallback branch in ComponentRelationships).
+    await renderLoaded({ ssp: HIER_SSP });
+    fireEvent.click(screen.getAllByText(/System Implementation/i)[0]);
+    fireEvent.click(screen.getAllByText(/^Components$/)[0]);
+    fireEvent.click(screen.getAllByText(/Hosting Service/)[0]);
+    await waitFor(() => screen.getAllByText("Depends On"));
+    const dependsOn = screen.getAllByText("Depends On")[0];
+    const groupDiv = dependsOn.parentElement!;
+    const chipTexts = Array.from(groupDiv.querySelectorAll<HTMLElement>("span"))
+      .map((s) => s.textContent || "");
+    expect(chipTexts.some((t) => t === "sw-archi")).toBe(true);
+  });
+
+  it("omits the Relationships card on a component with no qualifying links", async () => {
+    await openComponents();
+    fireEvent.click(screen.getAllByText(/No-Links Component/)[0]);
+    await waitFor(() => {
+      expect(
+        screen.getAllByText(/Tests the c.links fallback/).length,
+      ).toBeGreaterThan(0);
+    });
+    expect(screen.queryByText(/^Relationships$/)).toBeNull();
+  });
+
+  it("clicking a relationship chip navigates to the target component detail", async () => {
+    const { container } = await renderLoaded({ ssp: HIER_SSP });
+    fireEvent.click(screen.getAllByText(/System Implementation/i)[0]);
+    fireEvent.click(screen.getAllByText(/^Components$/)[0]);
+    fireEvent.click(screen.getAllByText(/Hosting Service/)[0]);
+
+    // Walk down from the "Uses Network" label to the chip span (the one with
+    // pointer cursor and the chip background). The chip is the direct child of
+    // the group div that contains both "Uses Network" and "Primary VPC".
+    const usesNetworkLabel = screen.getAllByText("Uses Network")[0];
+    const groupDiv = usesNetworkLabel.parentElement!; // group container div
+    const chip = Array.from(groupDiv.querySelectorAll<HTMLElement>("span"))
+      .find((s) => s.textContent?.includes("Primary VPC"));
+    expect(chip).toBeDefined();
+
+    fireEvent.click(chip!);
+
+    // After click, the System Implementation breadcrumb's detail panel reads
+    // the target component's description.
+    await waitFor(() => {
+      expect(container.textContent).toMatch(/Network/);
+    });
+    // The Relationships card no longer appears on Primary VPC (it has no links).
+    expect(screen.queryAllByText("Uses Network").length).toBe(0);
+  });
+
+  it("resolves chip targets whose href omits the `#` prefix", async () => {
+    // svc-host has `{ href: "sw-postgres", rel: "depends-on" }` (no `#`).
+    // The chip should still resolve and render — exercises the falsy branch
+    // of hrefToUuid's `startsWith("#") ? slice : href` ternary.
+    await renderLoaded({ ssp: HIER_SSP });
+    fireEvent.click(screen.getAllByText(/System Implementation/i)[0]);
+    fireEvent.click(screen.getAllByText(/^Components$/)[0]);
+    fireEvent.click(screen.getAllByText(/Hosting Service/)[0]);
+    await waitFor(() => screen.getAllByText("Depends On"));
+    const dependsOn = screen.getAllByText("Depends On")[0];
+    const groupDiv = dependsOn.parentElement!;
+    const chipTexts = Array.from(groupDiv.querySelectorAll<HTMLElement>("span"))
+      .map((s) => s.textContent || "");
+    expect(chipTexts.some((t) => t.includes("Postgres"))).toBe(true);
+  });
+});
