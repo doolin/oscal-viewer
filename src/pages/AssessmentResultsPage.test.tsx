@@ -2006,6 +2006,238 @@ describe("<AssessmentResultsPage /> AR5 — observation/finding/risk detail navi
   });
 });
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   AR6 — Final mop-up: scattered single-statement branches + dead-branch
+         inventory for the AR page
+
+   Targets:
+     - getSortKey early return for !title (L296)
+     - search filter by group name only (not in title/description)
+       (L774 mobile, L1369 desktop) — earlier "search by group name"
+       tests inadvertently matched via description "characters"
+       containing "ac"
+     - getMobileDrillItems result-N path (L848) — multi-result mobile drill
+     - Desktop and mobile FilterPill "All" click (L1015, L1116)
+     - Sidebar finding NavRow onClick (L1205)
+     - NistChips empty-controls early return (L1616)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("<AssessmentResultsPage /> AR6 — final mop-up", () => {
+  it("getSortKey returns '' for an observation without a title (L296)", async () => {
+    const ar = {
+      ...RICH_AR,
+      results: [
+        {
+          ...RICH_AR.results[0],
+          observations: [
+            { uuid: "obs-untitled-1", methods: ["EXAMINE"],
+              props: [{ name: "control-group", value: "AC" }, { name: "result", value: "pass" }] },
+            { uuid: "obs-untitled-2", title: "Has Title",
+              methods: ["EXAMINE"],
+              props: [{ name: "control-group", value: "AC" }, { name: "result", value: "pass" }] },
+          ],
+          risks: [],
+        },
+      ],
+    };
+    await renderLoaded({ ar });
+    fireEvent.click(screen.getAllByText("AC")[0]);
+    // The untitled observation is sorted with key "" — appears first;
+    // the titled observation appears after.
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Has Title/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("search by group-name only — group name matches but no obs title/description does (mobile L774)", async () => {
+    // Construct a fixture where the search term appears ONLY in the
+    // control-group prop, not in any observation title or description.
+    const ar = {
+      ...RICH_AR,
+      results: [
+        {
+          ...RICH_AR.results[0],
+          observations: [
+            { uuid: "o-1", title: "Generic alpha", description: "Generic prose.",
+              methods: ["EXAMINE"],
+              props: [{ name: "control-group", value: "XYZ" }, { name: "result", value: "pass" }] },
+          ],
+          risks: [],
+        },
+      ],
+    };
+    await renderLoaded({ ar, mobile: true });
+    const search = screen.getByPlaceholderText(/Search observations/);
+    // Search "XYZ" matches the group name but not the obs title/description.
+    fireEvent.change(search, { target: { value: "xyz" } });
+    expect(screen.getAllByText(/XYZ/).length).toBeGreaterThan(0);
+  });
+
+  it("search by group-name only (desktop L1369)", async () => {
+    const ar = {
+      ...RICH_AR,
+      results: [
+        {
+          ...RICH_AR.results[0],
+          observations: [
+            { uuid: "o-1", title: "Generic alpha", description: "Generic prose.",
+              methods: ["EXAMINE"],
+              props: [{ name: "control-group", value: "XYZ" }, { name: "result", value: "pass" }] },
+          ],
+          risks: [],
+        },
+      ],
+    };
+    const utils = await renderLoaded({ ar });
+    const search = screen.getByPlaceholderText("Search observations");
+    fireEvent.change(search, { target: { value: "xyz" } });
+    const nav = utils.container.querySelector("nav");
+    expect(nav!.textContent).toMatch(/XYZ/);
+  });
+
+  it("multi-result mobile drill: tap a result → groups appear (L848)", async () => {
+    const ar = {
+      ...RICH_AR,
+      results: [
+        { ...RICH_AR.results[0], uuid: "r-1", title: "Result Alpha" },
+        { ...RICH_AR.results[0], uuid: "r-2", title: "Result Beta" },
+      ],
+    };
+    await renderLoaded({ ar, mobile: true });
+    // Multi-result mode shows result rows at the mobile root.
+    const resultRow = screen.getAllByText(/Result Alpha/)[0];
+    fireEvent.click(resultRow);
+    // After drilling into the result, the group rows appear.
+    await waitFor(() =>
+      expect(screen.queryAllByText("AC").length).toBeGreaterThan(0),
+    );
+  });
+
+  it("desktop FilterPill 'All' click resets the filter (L1015 mobile, L1116 desktop)", async () => {
+    await renderLoaded();
+    // First click "fail" to set the filter to fail.
+    const failPill = Array.from(document.querySelectorAll<HTMLElement>("span"))
+      .find((el) => /^fail\s*\(\d+\)$/i.test((el.textContent || "").trim()));
+    fireEvent.click(failPill!);
+    // Now click "All" to reset.
+    const allPill = Array.from(document.querySelectorAll<HTMLElement>("span"))
+      .find((el) => /^All\s*\(\d+\)$/.test((el.textContent || "").trim()));
+    expect(allPill).toBeDefined();
+    fireEvent.click(allPill!);
+    // After reset, both AC and SC groups are visible again.
+    expect(screen.getAllByText("AC").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("SC").length).toBeGreaterThan(0);
+  });
+
+  it("sidebar finding NavRow click navigates to FindingDetailView (L1205)", async () => {
+    const arWithFinding = {
+      ...RICH_AR,
+      results: [
+        {
+          ...RICH_AR.results[0],
+          findings: [
+            {
+              uuid: "fnd-1",
+              title: "Sidebar Finding",
+              description: "Reached via sidebar nav.",
+              target: { type: "objective-id", "target-id": "ac-1",
+                status: { state: "not-satisfied", reason: "fail" } },
+            },
+          ],
+        },
+      ],
+    };
+    const utils = await renderLoaded({ ar: arWithFinding });
+    // findings-section defaults to collapsed; click "Findings (1)" to
+    // expand AND navigate to FindingsListView. The sidebar NavRow for the
+    // individual finding then renders.
+    fireEvent.click(screen.getAllByText(/Findings \(1\)/)[0]);
+    const nav = utils.container.querySelector("nav")!;
+    const acElems = Array.from(nav.querySelectorAll<HTMLElement>("*"))
+      .filter((el) => (el.textContent || "").trim() === "AC-1");
+    expect(acElems.length).toBeGreaterThan(0);
+    fireEvent.click(acElems[acElems.length - 1]);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Sidebar Finding/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("NistChips returns null when controls array is empty (L1616)", async () => {
+    // NistChips is rendered alongside findings/observations with NIST
+    // control IDs extracted from remarks. Use a finding whose target-id
+    // and observations have no NIST patterns in remarks.
+    const ar = {
+      ...RICH_AR,
+      results: [
+        {
+          ...RICH_AR.results[0],
+          observations: [
+            { uuid: "obs-no-nist", title: "Plain obs", description: "No control patterns here.",
+              methods: ["EXAMINE"], remarks: "Plain remarks without any control IDs.",
+              props: [{ name: "control-group", value: "AC" }, { name: "result", value: "pass" }] },
+          ],
+          findings: [
+            { uuid: "fnd-no-nist", title: "Plain finding", description: "No links.",
+              target: { type: "objective-id", "target-id": "obs-target",
+                status: { state: "satisfied" } } },
+          ],
+          risks: [],
+        },
+      ],
+    };
+    await renderLoaded({ ar });
+    fireEvent.click(screen.getAllByText("AC")[0]);
+    fireEvent.click(screen.getAllByText(/Plain obs/)[0]);
+    // ObservationView renders without crashing; NistChips returned null
+    // for the empty controls list.
+    await waitFor(() =>
+      expect(screen.queryAllByText(/No control patterns here/).length).toBeGreaterThan(0),
+    );
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Structurally-unreachable / dead code surviving the AR1-AR6 push.
+
+   These are the AR-page equivalent of the dead-branch inventory done for
+   Profile. They are refactor candidates — delete the code in the eventual
+   cleanup round, do NOT paper over with v8-ignore comments.
+
+   1. Catalog-enrichment block (all `@ts-ignore: reserved for future use`):
+        - findCatalogControl (L344-370)
+        - buildCatalogParamMap (L373-396)
+        - renderCatalogParamText (L398-407)        [only called from dead chain]
+        - resolveCatalogInlineParams (L409-415)    [only called from dead chain]
+        - CatalogPartTree (L2396-2425)
+        - CatalogProseWithParams (L2431-2468)      [only called from CatalogPartTree]
+        - CollapsibleSection (L2475-2489)
+        - getAllCatalogControls (L2496-2510)
+
+      Combined ≈ 80 statements and ~30 branches. Never invoked from any
+      rendering path; intended for future catalog cross-referencing.
+
+   2. Unused icons (likely from the LLM-scaffold pass):
+        - IcoExternalLink, IcoBook, IcoTarget, IcoTool, etc. — render in
+          places not on the current test paths (deep in detail views).
+
+   3. fmtDate / fmtDateTime catch arms (L237, L252) — jsdom's Date methods
+      don't throw on invalid input, so `try { … } catch { return s; }`
+      is unreachable in tests.
+
+   4. getMobileDrillItems `return []` fallback (L906) — drill paths only
+      contain prefixes that the handler branches recognize.
+
+   5. mobileBreadcrumbs unknown-segment fallback (L922) — same reason.
+
+   6. ViewRouter NotFoundView fallthrough (L1552) + NotFoundView itself
+      (L3208-L3220) — setView is internal; no user gesture produces an
+      unknown view token.
+
+   7. DropZone synthesized input onchange (L1667) — jsdom doesn't fire
+      change events on detached file inputs.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+
 
 
 
