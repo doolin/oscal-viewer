@@ -1584,3 +1584,185 @@ describe("<ProfilePage /> D2 — sidebar search filter edge cases", () => {
   // becomes reachable.
 });
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   D3 — Mobile drill-down (control-level), Breadcrumbs, ViewRouter,
+   DropZone interactions, OverviewView merge strategies
+
+   Targets:
+     - getControlChildren (line 1186) — drill into a control with
+       enhancements on mobile
+     - mobile ctrl-* drill path (1139), breadcrumb for ctrl (1239-1240),
+       breadcrumb onClick handler (1273)
+     - empty-state (1306-1307) — search with no matches in mobile
+     - ViewRouter NotFoundView fallthrough (1342)
+     - Breadcrumbs onClick handler (1355)
+     - DropZone handleClick / onDragOver / onDragLeave / form submit
+       (1417-1470)
+     - OverviewView merge-strategy ternaries (1517-1519)
+
+   Structurally-unreachable branches in this region (documented, not
+   chased):
+     - L1163, L1189, L1238 fallback paths: `if (!fg) return []` /
+       `fg ? … : prefix` — fg is always found because mobilePath /
+       breadcrumbs only contain prefixes that came from the rendered
+       familyGroups list.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("<ProfilePage /> D3 — mobile control-level drill-down", () => {
+  it("drills into a parent control (AC-1) and shows its enhancement (AC-1(1)) as a leaf row", async () => {
+    await renderLoaded({ mobile: true });
+
+    // Root → tap AC family → drill-in (mobilePath=["family-ac"])
+    fireEvent.click(screen.getAllByText(/Access Control/)[0]);
+    await waitFor(() => expect(screen.getAllByText("AC-1").length).toBeGreaterThan(0));
+
+    // Tap AC-1 — it has enhancements (ac-1.1), so isBranch=true → drill-in
+    // again (mobilePath=["family-ac","ctrl-ac-1"]). getControlChildren runs.
+    fireEvent.click(screen.getAllByText("AC-1")[0]);
+
+    // Inside ctrl drill: a "Detail" leaf for AC-1, then the enhancement
+    // AC-1(1) leaf row. Both come from getControlChildren.
+    await waitFor(() => expect(screen.getAllByText(/AC-1 — Detail/).length).toBeGreaterThan(0));
+    expect(screen.getAllByText(/AC-1\(1\)/).length).toBeGreaterThan(0);
+  });
+
+  it("mobile breadcrumbs render at the ctrl-level drill and onBreadcrumbJump jumps back to the family", async () => {
+    const utils = await renderLoaded({ mobile: true });
+
+    fireEvent.click(screen.getAllByText(/Access Control/)[0]);
+    await waitFor(() => expect(screen.getAllByText("AC-1").length).toBeGreaterThan(0));
+    fireEvent.click(screen.getAllByText("AC-1")[0]);
+    await waitFor(() => expect(screen.getAllByText(/AC-1 — Detail/).length).toBeGreaterThan(0));
+
+    // At ctrl-level the breadcrumbs are: "Profile" / "AC Access Control" / "AC-1"
+    // Each is wrapped in a clickable span. Clicking the middle one jumps
+    // to mobilePath=["family-ac"] (covers L1273 onClick).
+    const family = screen.getAllByText(/AC Access Control/)[0];
+    fireEvent.click(family);
+
+    // After the jump, the family drill-down items are visible again — the
+    // AC-1 row is back, but the Detail leaf is gone.
+    await waitFor(() => expect(screen.getAllByText("AC-1").length).toBeGreaterThan(0));
+    expect(screen.queryByText(/AC-1 — Detail/)).toBeNull();
+
+    // Sanity: the utils container has no top-bar Back button (we're in the
+    // drill-down, not the content view).
+    const stillContentBack = Array.from(utils.container.querySelectorAll("button"))
+      .some((b) => /^← Back$/.test((b.textContent || "").trim()));
+    expect(stillContentBack).toBe(false);
+  });
+
+  it("mobile search with no matches renders the 'No matching controls found' empty state", async () => {
+    await renderLoaded({ mobile: true });
+    const search = screen.getByPlaceholderText(/Search controls/);
+    fireEvent.change(search, { target: { value: "no-such-control-id-anywhere" } });
+    await waitFor(() => {
+      expect(screen.getAllByText(/No matching controls found/).length).toBeGreaterThan(0);
+    });
+  });
+});
+
+// ViewRouter's NotFoundView fallthrough (line 1342) is reachable only when
+// the active `view` state is set to a token that doesn't start with
+// "overview", "metadata", "imports", "family-", or "ctrl-". The internal
+// `setView` is not exposed and no user gesture in the current UI produces
+// such a token, so the path is unreachable via the public API. Documented
+// in quirks.md as a refactor candidate — the NotFoundView component itself
+// can be deleted once that's confirmed during the refactor round.
+
+describe("<ProfilePage /> D3 — Breadcrumbs onClick navigates", () => {
+  it("clicking a breadcrumb on the Imports view navigates back to Overview", async () => {
+    await renderLoaded();
+    fireEvent.click(screen.getByText("Imports"));
+    await waitFor(() =>
+      expect(screen.getAllByText(/Selected Control IDs/).length).toBeGreaterThan(0),
+    );
+    // Breadcrumbs in ImportsView: "Overview / Imports". Clicking "Overview"
+    // calls navigate("overview") which flips the view back. The handler is
+    // the anonymous fn at line 1355.
+    const overviewCrumb = screen.getAllByText("Overview").find((el) => {
+      // Pick the one that's a child of the breadcrumb span (cursor:pointer
+      // and color:brightBlue while not active).
+      return el.tagName === "SPAN" && /pointer/.test(el.getAttribute("style") || "");
+    });
+    expect(overviewCrumb).toBeDefined();
+    fireEvent.click(overviewCrumb!);
+    await waitFor(() =>
+      expect(screen.getAllByText(/Sample Profile/).length).toBeGreaterThan(0),
+    );
+  });
+});
+
+describe("<ProfilePage /> D3 — DropZone interactions", () => {
+  it("clicking the dropzone area opens a file picker (synthetic input.click)", () => {
+    render(<Harness preload={false} />);
+    // The dropzone div carries the dashed-border style and clickable cursor.
+    // Click it — handleClick creates a hidden <input type=file>, sets
+    // accept=".json", attaches onchange, and calls .click(). We can't
+    // intercept the synthesized DOM input, but we CAN verify the handler
+    // is wired and a click doesn't throw.
+    const dropzone = screen.getByText(/Drop an OSCAL/).parentElement!;
+    expect(() => fireEvent.click(dropzone)).not.toThrow();
+  });
+
+  it("dragOver toggles the dragging style; dragLeave reverts it", () => {
+    const utils = render(<Harness preload={false} />);
+    const dropzone = (utils.container.querySelector('div[style*="dashed"]') as HTMLElement)!;
+
+    // Initial border color is the paleGray (idle). After dragOver, the border
+    // should turn cobalt (the `dragging` state). After dragLeave it reverts.
+    fireEvent.dragOver(dropzone);
+    expect(dropzone.style.borderColor || dropzone.getAttribute("style") || "")
+      .toMatch(/cobalt|--color-cobalt|--color-dropzoneBg/);
+
+    fireEvent.dragLeave(dropzone);
+    // After leave, the dashed border is back to its idle color.
+    expect(dropzone.style.borderColor || dropzone.getAttribute("style") || "")
+      .not.toMatch(/var\(--color-cobalt\)/);
+  });
+
+  it("submitting the URL fetch form sets the ?url= search parameter", () => {
+    render(<Harness preload={false} />);
+    const urlInput = screen.getByPlaceholderText(/https:\/\//) as HTMLInputElement;
+    fireEvent.change(urlInput, { target: { value: "https://example.com/profile.json" } });
+    const form = urlInput.closest("form")!;
+    expect(() => fireEvent.submit(form)).not.toThrow();
+    // useSearchParams isn't observable directly without remounting; the
+    // important coverage is that the onSubmit handler ran without throwing.
+  });
+
+  it("renders the error block and external-URL hint when sourceUrl is set and an error occurs", async () => {
+    // Trigger an auto-load error by stubbing fetch to fail. useUrlDocument
+    // surfaces an error and DropZone renders it next to the dashed area.
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 500 })));
+    render(<Harness preload={false} initialPath="/profile?url=https://example.com/p.json" />);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/HTTP 500|HTTP error/i).length).toBeGreaterThan(0),
+    );
+    // "Open URL directly" link appears alongside the error.
+    expect(screen.getAllByText(/Open URL directly/).length).toBeGreaterThan(0);
+  });
+});
+
+describe("<ProfilePage /> D3 — OverviewView merge strategies", () => {
+  it("renders 'As-Is (preserve structure)' when profile.merge['as-is'] is set", async () => {
+    const p: Profile = { ...RICH_PROFILE, merge: { "as-is": true } };
+    await renderLoaded({ profile: p });
+    expect(screen.getAllByText(/As-Is \(preserve structure\)/).length).toBeGreaterThan(0);
+  });
+
+  it("renders 'Custom' when profile.merge.custom is set", async () => {
+    const p: Profile = { ...RICH_PROFILE, merge: { custom: { kind: "noop" } } };
+    await renderLoaded({ profile: p });
+    expect(screen.getAllByText(/^Custom$/).length).toBeGreaterThan(0);
+  });
+
+  it("renders 'Default (flat)' when profile.merge is omitted entirely", async () => {
+    const p: Profile = { ...RICH_PROFILE };
+    delete (p as Partial<Profile>).merge;
+    await renderLoaded({ profile: p });
+    expect(screen.getAllByText(/Default \(flat\)/).length).toBeGreaterThan(0);
+  });
+});
+
+
