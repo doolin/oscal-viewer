@@ -234,13 +234,13 @@ function getProp(props: OscalProp[] | undefined, name: string): string {
 }
 
 /** Check if a deadline is overdue */
-function isOverdue(deadline?: string): boolean {
+export function isOverdue(deadline?: string): boolean {
   if (!deadline) return false;
   return new Date(deadline) < new Date();
 }
 
 /** Days until or since a date (negative = overdue) */
-function daysUntil(dateStr: string): number {
+export function daysUntil(dateStr: string): number {
   const diff = new Date(dateStr).getTime() - Date.now();
   return Math.ceil(diff / (1000 * 60 * 60 * 24));
 }
@@ -257,7 +257,7 @@ const PART_SECTIONS: { name: string; label: string; icon: string; color: string 
   { name: "assessment-method", label: "Assessment Method", icon: "check", color: colors.mint },
 ];
 
-function renderParamText(param: CatalogParam, paramMap: Record<string, CatalogParam>): string {
+export function renderParamText(param: CatalogParam, paramMap: Record<string, CatalogParam>): string {
   if (param.select) {
     const howMany = param.select["how-many"];
     const prefix = howMany === "one-or-more" ? "Selection (one or more)" : "Selection";
@@ -268,7 +268,7 @@ function renderParamText(param: CatalogParam, paramMap: Record<string, CatalogPa
   return `[Assignment: ${label}]`;
 }
 
-function resolveInlineParams(text: string, paramMap: Record<string, CatalogParam>): string {
+export function resolveInlineParams(text: string, paramMap: Record<string, CatalogParam>): string {
   return text.replace(/\{\{\s*insert:\s*param\s*,\s*([^}]+?)\s*\}\}/g, (_match, id: string) => {
     const param = paramMap[id.trim()];
     if (!param) return `[Assignment: ${id.trim()}]`;
@@ -276,13 +276,13 @@ function resolveInlineParams(text: string, paramMap: Record<string, CatalogParam
   });
 }
 
-function getCatalogLabel(props?: CatalogOscalProp[]): string {
+export function getCatalogLabel(props?: CatalogOscalProp[]): string {
   if (!props) return "";
   const lbl = props.find((p) => p.name === "label" && p.class !== "zero-padded");
   return lbl?.value ?? props.find((p) => p.name === "label")?.value ?? "";
 }
 
-function findCatalogControl(catalog: OscalCatalog, id: string): CatalogControl | undefined {
+export function findCatalogControl(catalog: OscalCatalog, id: string): CatalogControl | undefined {
   function searchGroup(g: CatalogGroup): CatalogControl | undefined {
     for (const c of g.controls ?? []) {
       if (c.id === id) return c;
@@ -309,7 +309,7 @@ function findCatalogControl(catalog: OscalCatalog, id: string): CatalogControl |
   return undefined;
 }
 
-function findParentCatalogControl(catalog: OscalCatalog, enhId: string): CatalogControl | undefined {
+export function findParentCatalogControl(catalog: OscalCatalog, enhId: string): CatalogControl | undefined {
   function searchGroup(g: CatalogGroup): CatalogControl | undefined {
     for (const c of g.controls ?? []) {
       for (const enh of c.controls ?? []) {
