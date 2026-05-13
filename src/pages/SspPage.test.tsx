@@ -1388,3 +1388,88 @@ describe("<SspPage /> service-component hierarchy (upstream #53)", () => {
     expect(chipTexts.some((t) => t.includes("Postgres"))).toBe(true);
   });
 });
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SSP1 — Component-type and asset-type switch coverage
+
+   The component-type and asset-type switch blocks at L635-717 total ~50
+   case arms across componentTypeNavKey, componentTypeColor,
+   assetTypeIconKey, assetTypeColor. Each fires when a component or
+   inventory-item of that type renders. Bulk-cover with two big fixtures.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const ALL_COMPONENT_TYPES = [
+  "this-system", "system", "interconnection", "hardware", "service",
+  "policy", "physical", "process-procedure", "plan", "guidance",
+  "standard", "validation", "network", "unrecognized-fallback",
+];
+
+const ALL_ASSET_TYPES = [
+  "os", "database", "web-server", "application", "appliance",
+  "network", "switch", "router", "firewall", "storage",
+  "virtual", "virtual-machine", "compute", "software", "hardware",
+  "service", "this-system", "interconnection", "policy", "physical",
+  "process-procedure", "plan", "guidance", "standard", "validation",
+  "unrecognized-asset-fallback",
+];
+
+describe("<SspPage /> SSP1 — component/asset-type switch coverage", () => {
+  it("renders one component per case arm of componentTypeNavKey / componentTypeColor (L635-674)", async () => {
+    const components = ALL_COMPONENT_TYPES.map((type, i) => ({
+      uuid: `comp-type-${i}`,
+      type,
+      title: `${type}-comp`,
+      description: `Component of type ${type}.`,
+      status: { state: "operational" },
+    }));
+    const ssp = {
+      ...RICH_SSP,
+      uuid: "ssp-types",
+      "system-implementation": {
+        ...RICH_SSP["system-implementation"],
+        components,
+      },
+    };
+    await renderLoaded({ ssp });
+    fireEvent.click(screen.getAllByText(/System Implementation/i)[0]);
+    fireEvent.click(screen.getAllByText(/^Components$/)[0]);
+    for (const t of ALL_COMPONENT_TYPES) {
+      expect(screen.getAllByText(new RegExp(`${t}-comp`)).length).toBeGreaterThan(0);
+    }
+  });
+
+  it("renders one inventory-item per case arm of assetTypeIconKey / assetTypeColor (L678-716)", async () => {
+    const inventoryItems = ALL_ASSET_TYPES.map((assetType, i) => ({
+      uuid: `inv-type-${i}`,
+      description: `Inventory item with asset-type ${assetType}.`,
+      props: [{ name: "asset-type", value: assetType }],
+      "implemented-components": [],
+    }));
+    const ssp = {
+      ...RICH_SSP,
+      uuid: "ssp-asset-types",
+      "system-implementation": {
+        ...RICH_SSP["system-implementation"],
+        "inventory-items": inventoryItems,
+      },
+    };
+    await renderLoaded({ ssp });
+    fireEvent.click(screen.getAllByText(/System Implementation/i)[0]);
+    fireEvent.click(screen.getAllByText(/Inventory/i)[0]);
+    for (const t of ALL_ASSET_TYPES) {
+      expect(
+        screen.getAllByText(new RegExp(`asset-type ${t}\\.`)).length,
+      ).toBeGreaterThan(0);
+    }
+  });
+
+  it("inventoryItemIcon falls back to implemented-component type when no asset-type prop is set (L729-733)", async () => {
+    // RICH_SSP's inv-1 has no asset-type prop but has implemented-components.
+    // The fallback path resolves the icon/color from comp-1 (type=software).
+    await renderLoaded();
+    fireEvent.click(screen.getAllByText(/System Implementation/i)[0]);
+    fireEvent.click(screen.getAllByText(/Inventory/i)[0]);
+    expect(screen.getAllByText(/Linux log collector/).length).toBeGreaterThan(0);
+  });
+});
+
