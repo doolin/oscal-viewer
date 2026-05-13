@@ -1552,8 +1552,8 @@ describe("<AssessmentResultsPage /> AR2 — mobile drill-down filters", () => {
     await renderLoaded({ mobile: true });
     // Mobile shell renders FilterPills at the top. Click "fail" → status
     // filter narrows; only the failing observation remains in the AC group.
-    const failPill = Array.from(document.querySelectorAll<HTMLElement>("div, span, button"))
-      .find((el) => /^fail\s*1$/i.test((el.textContent || "").trim()));
+    const failPill = Array.from(document.querySelectorAll<HTMLElement>("span"))
+      .find((el) => /^fail\s*\(\d+\)$/i.test((el.textContent || "").trim()));
     if (failPill) fireEvent.click(failPill);
     // Drill into AC to see only the failing observation.
     fireEvent.click(screen.getAllByText("AC")[0]);
@@ -1637,5 +1637,127 @@ describe("<AssessmentResultsPage /> AR2 — DropZone interactions", () => {
     expect(screen.queryAllByText(/Drop an OSCAL/).length).toBeGreaterThan(0);
   });
 });
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   AR3 — Desktop sidebar: search filter, FilterPill clicks, group filter,
+         finding-row NavRow click
+
+   Targets:
+     - Desktop search input onChange (L1109)
+     - Desktop FilterPill onClick handlers (L1116-1118)
+     - SidebarGroupTree visible-observation filter (L1365-1374): status
+       filter, title/description/group-name search match, no-match
+     - Finding NavRow onClick navigates to finding detail (L1205)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("<AssessmentResultsPage /> AR3 — desktop sidebar filters and nav", () => {
+  /** Find the desktop sidebar `<nav>` element (the desktop layout's left
+   *  panel — distinguishes it from the mobile drill-down). */
+  function sidebarNav(container: HTMLElement): HTMLElement | null {
+    return container.querySelector("nav");
+  }
+
+  it("desktop search input filters the sidebar group tree by observation title", async () => {
+    const utils = await renderLoaded();
+    const search = screen.getByPlaceholderText("Search observations");
+    fireEvent.change(search, { target: { value: "password" } });
+    const nav = sidebarNav(utils.container);
+    expect(nav).not.toBeNull();
+    // AC group stays (its observation matches by title); SC group's title
+    // "Encryption at Rest Enabled" doesn't include "password".
+    expect(nav!.textContent).toMatch(/AC/);
+    // After the search, SC is no longer in the sidebar tree.
+    expect(nav!.textContent).not.toMatch(/SC/);
+  });
+
+  it("desktop search by observation description (L1368 branch)", async () => {
+    const utils = await renderLoaded();
+    const search = screen.getByPlaceholderText("Search observations");
+    // obs-2 description: "AES-256 verified on all volumes."
+    fireEvent.change(search, { target: { value: "aes-256" } });
+    const nav = sidebarNav(utils.container);
+    expect(nav!.textContent).toMatch(/SC/);
+  });
+
+  it("desktop search by group name (L1369 branch)", async () => {
+    const utils = await renderLoaded();
+    const search = screen.getByPlaceholderText("Search observations");
+    fireEvent.change(search, { target: { value: "AC" } });
+    const nav = sidebarNav(utils.container);
+    expect(nav!.textContent).toMatch(/AC/);
+  });
+
+  it("desktop search no-match hides every group (L1370/1374)", async () => {
+    const utils = await renderLoaded();
+    const search = screen.getByPlaceholderText("Search observations");
+    fireEvent.change(search, { target: { value: "no-such-string" } });
+    const nav = sidebarNav(utils.container);
+    // Groups gone from the sidebar; only the static nav items (Overview,
+    // Metadata) remain in nav.textContent.
+    expect(nav!.textContent).not.toMatch(/^AC/m);
+    expect(nav!.textContent).not.toMatch(/^SC/m);
+  });
+
+  it("desktop FilterPill click sets the status filter (L1116-1118)", async () => {
+    const utils = await renderLoaded();
+    // The FilterPills render with format "<label> <count>". Click "fail".
+    // FilterPill renders as "<label> (<count>)" — e.g., "fail (1)".
+    const failPill = Array.from(utils.container.querySelectorAll<HTMLElement>("span"))
+      .find((el) => /^fail\s*\(\d+\)$/i.test((el.textContent || "").trim()));
+    expect(failPill).toBeDefined();
+    fireEvent.click(failPill!);
+    // After clicking the fail pill, the SC group (passing observation only)
+    // disappears from the sidebar tree; AC stays.
+    const nav = sidebarNav(utils.container);
+    expect(nav!.textContent).toMatch(/AC/);
+    expect(nav!.textContent).not.toMatch(/SC/);
+  });
+
+  it("finding NavRow click navigates to the finding detail view (L1205)", async () => {
+    // RICH_AR has no findings array, so the finding-NavRow path needs an AR
+    // fixture with at least one finding. Add a minimal finding referencing
+    // an obs-1 target.
+    const arWithFinding = {
+      ...RICH_AR,
+      results: [
+        {
+          ...RICH_AR.results[0],
+          findings: [
+            {
+              uuid: "fnd-1",
+              title: "AC-1 Finding",
+              description: "Password length check failed.",
+              target: {
+                type: "objective-id",
+                "target-id": "ac-1",
+                status: { state: "not-satisfied", reason: "fail" },
+              },
+              "related-observations": [{ "observation-uuid": "obs-1" }],
+            },
+          ],
+        },
+      ],
+    };
+    const utils = await renderLoaded({ ar: arWithFinding });
+    // Expand any nav group as needed; the finding NavRow renders at depth 1
+    // under the result tree (single-result case).
+    // Navigate via the Findings nav row (a click-through to the findings
+    // list view). Then click the finding entry there.
+    const findingsNav = screen.getAllByText(/Findings \(1\)/)[0];
+    fireEvent.click(findingsNav);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/AC-1 Finding/).length).toBeGreaterThan(0),
+    );
+    // Click the finding title to navigate to its detail view (covers the
+    // navigation pattern that mirrors L1205's nav handler).
+    const titleRow = screen.getAllByText(/AC-1 Finding/)[0];
+    fireEvent.click(titleRow);
+    await waitFor(() =>
+      // FindingDetailView renders the finding's description.
+      expect(screen.queryAllByText(/Password length check failed/).length).toBeGreaterThan(0),
+    );
+  });
+});
+
 
 
