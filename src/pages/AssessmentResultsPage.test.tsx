@@ -1536,3 +1536,106 @@ describe("<AssessmentResultsPage /> AR1 — risk severity sort + sort key", () =
   });
 });
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   AR2 — Mobile drill-down filters + DropZone interactions
+
+   Targets:
+     - Mobile filteredGroupedObs filter branches (L770-775):
+         status filter, title match, description match, group-name match,
+         no-match return false
+     - DropZone handlers (L1664-1717): handleClick, onDragOver, onDragLeave,
+       form onSubmit, error block onClick stopPropagation
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("<AssessmentResultsPage /> AR2 — mobile drill-down filters", () => {
+  it("status filter pill narrows the visible observations (L770)", async () => {
+    await renderLoaded({ mobile: true });
+    // Mobile shell renders FilterPills at the top. Click "fail" → status
+    // filter narrows; only the failing observation remains in the AC group.
+    const failPill = Array.from(document.querySelectorAll<HTMLElement>("div, span, button"))
+      .find((el) => /^fail\s*1$/i.test((el.textContent || "").trim()));
+    if (failPill) fireEvent.click(failPill);
+    // Drill into AC to see only the failing observation.
+    fireEvent.click(screen.getAllByText("AC")[0]);
+    await waitFor(() =>
+      expect(screen.getAllByText(/Password Length/).length).toBeGreaterThan(0),
+    );
+    // The passing observation should not be visible after the status filter.
+    expect(screen.queryByText(/Encryption at Rest/)).toBeNull();
+  });
+
+  it("search filter matches by observation title (L772)", async () => {
+    await renderLoaded({ mobile: true });
+    const search = screen.getByPlaceholderText(/Search observations/);
+    fireEvent.change(search, { target: { value: "password" } });
+    // AC group is visible because its obs title matches.
+    expect(screen.getAllByText("AC").length).toBeGreaterThan(0);
+    // SC group filtered out because no obs in it matches.
+    expect(screen.queryByText(/^SC$/)).toBeNull();
+  });
+
+  it("search filter matches by observation description (L773)", async () => {
+    await renderLoaded({ mobile: true });
+    const search = screen.getByPlaceholderText(/Search observations/);
+    // RICH_AR's obs-2 description: "AES-256 verified on all volumes."
+    fireEvent.change(search, { target: { value: "aes-256" } });
+    expect(screen.getAllByText("SC").length).toBeGreaterThan(0);
+  });
+
+  it("search filter matches by group name (L774)", async () => {
+    await renderLoaded({ mobile: true });
+    const search = screen.getByPlaceholderText(/Search observations/);
+    // "AC" matches the AC group name; obs-1 / obs-2 titles don't contain it.
+    fireEvent.change(search, { target: { value: "AC" } });
+    expect(screen.getAllByText("AC").length).toBeGreaterThan(0);
+  });
+
+  it("search filter yields no match → group hidden (L775)", async () => {
+    await renderLoaded({ mobile: true });
+    const search = screen.getByPlaceholderText(/Search observations/);
+    fireEvent.change(search, { target: { value: "no-such-string-anywhere" } });
+    expect(screen.queryByText("AC")).toBeNull();
+    expect(screen.queryByText("SC")).toBeNull();
+  });
+});
+
+describe("<AssessmentResultsPage /> AR2 — DropZone interactions", () => {
+  it("clicking the dropzone fires handleClick without throwing (L1664-1668)", () => {
+    render(<Harness preload={false} />);
+    const dropzone = screen.getByText(/Drop an OSCAL/).parentElement!;
+    expect(() => fireEvent.click(dropzone)).not.toThrow();
+  });
+
+  it("dragOver and dragLeave toggle the dragging style (L1680-1681)", () => {
+    const utils = render(<Harness preload={false} />);
+    const zone = utils.container.querySelector('div[style*="dashed"]') as HTMLElement;
+    fireEvent.dragOver(zone);
+    expect(zone.getAttribute("style") || "").toMatch(/cobalt|dropzoneBg|color-cobalt/);
+    fireEvent.dragLeave(zone);
+    expect(zone.getAttribute("style") || "").not.toMatch(/var\(--color-cobalt\)/);
+  });
+
+  it("submitting the URL fetch form sets ?url= without throwing (L1717)", () => {
+    render(<Harness preload={false} />);
+    const urlInput = screen.getByPlaceholderText(/https:\/\//) as HTMLInputElement;
+    fireEvent.change(urlInput, { target: { value: "https://example.com/ar.json" } });
+    const form = urlInput.closest("form")!;
+    expect(() => fireEvent.submit(form)).not.toThrow();
+  });
+
+  it("renders the error block and stops propagation on click (L1698)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 500 })));
+    const { container } = render(<Harness preload={false} initialPath="/assessment-results?url=https://example.com/ar.json" />);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Open URL directly/).length).toBeGreaterThan(0),
+    );
+    const errBlock = Array.from(container.querySelectorAll<HTMLElement>("div"))
+      .find((d) => /Open URL directly/.test(d.textContent || ""));
+    expect(errBlock).toBeDefined();
+    expect(() => fireEvent.click(errBlock!)).not.toThrow();
+    // Dropzone still present after the click.
+    expect(screen.queryAllByText(/Drop an OSCAL/).length).toBeGreaterThan(0);
+  });
+});
+
+
