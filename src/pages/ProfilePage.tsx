@@ -140,23 +140,23 @@ const FAMILY_NAMES: Record<string, string> = {
 };
 
 /** Extract family prefix from a control ID (e.g. "ac-2.3" → "ac") */
-function familyPrefix(controlId: string): string {
+export function familyPrefix(controlId: string): string {
   const m = controlId.match(/^([a-z]+)-/i);
   return m ? m[1].toLowerCase() : controlId;
 }
 
 /** Check if a control ID is an enhancement (has a dot, e.g. "ac-2.3") */
-function isEnhancement(controlId: string): boolean {
+export function isEnhancement(controlId: string): boolean {
   return /\.\d+$/.test(controlId);
 }
 
 /** Get parent control ID from an enhancement ID ("ac-2.3" → "ac-2") */
-function parentControlId(enhId: string): string {
+export function parentControlId(enhId: string): string {
   return enhId.replace(/\.\d+$/, "");
 }
 
 /** Get display label for a control ID ("ac-2" → "AC-2", "ac-2.3" → "AC-2(3)") */
-function controlLabel(id: string): string {
+export function controlLabel(id: string): string {
   const upper = id.toUpperCase();
   const dotMatch = upper.match(/^(.+)\.(\d+)$/);
   if (dotMatch) return `${dotMatch[1]}(${dotMatch[2]})`;
@@ -167,7 +167,7 @@ function controlLabel(id: string): string {
  * Map a param-id to a control-id.
  * "ac-01_odp.05" → "ac-1", "ac-02.03_odp.01" → "ac-2.3"
  */
-function paramToControlId(paramId: string): string {
+export function paramToControlId(paramId: string): string {
   const prefix = paramId.split("_")[0]; // "ac-01" from "ac-01_odp.05"
   // Remove leading zeros from digit segments
   return prefix.replace(/(?<=-)0+(\d)/g, "$1").replace(/(?<=\.)0+(\d)/g, "$1");
@@ -185,14 +185,14 @@ function trunc(s: string, n: number) {
 }
 
 /** Get the label prop from an object's props array */
-function getLabel(props?: OscalProp[]): string {
+export function getLabel(props?: OscalProp[]): string {
   if (!props) return "";
   const lbl = props.find((p) => p.name === "label" && p.class !== "zero-padded");
   return lbl?.value ?? props.find((p) => p.name === "label")?.value ?? "";
 }
 
 /** Resolve import href — if starts with #, look up in back-matter */
-function resolveImportHref(profile: Profile, importEntry: ProfileImport): {
+export function resolveImportHref(profile: Profile, importEntry: ProfileImport): {
   url: string | null; title: string | null; resourceUuid: string | null;
 } {
   const href = importEntry.href;
@@ -257,7 +257,7 @@ function getFamilyNameFromCatalog(
 }
 
 /** Build grouped family structure from a list of control IDs */
-function buildFamilyGroups(controlIds: string[], catalog?: Catalog | null): FamilyGroup[] {
+export function buildFamilyGroups(controlIds: string[], catalog?: Catalog | null): FamilyGroup[] {
   const familyMap = new Map<string, { controls: string[]; enhancements: string[]; allIds: string[] }>();
 
   for (const id of controlIds) {
@@ -284,7 +284,7 @@ function buildFamilyGroups(controlIds: string[], catalog?: Catalog | null): Fami
 }
 
 /** Build a map from control-id to its alter entry */
-function buildAlterMap(alters: Alter[]): Map<string, Alter> {
+export function buildAlterMap(alters: Alter[]): Map<string, Alter> {
   const map = new Map<string, Alter>();
   for (const alter of alters) {
     map.set(alter["control-id"], alter);
@@ -293,7 +293,7 @@ function buildAlterMap(alters: Alter[]): Map<string, Alter> {
 }
 
 /** Build a map from control-id to set-parameters affecting it */
-function buildSetParamMap(setParams: SetParameter[]): Map<string, SetParameter[]> {
+export function buildSetParamMap(setParams: SetParameter[]): Map<string, SetParameter[]> {
   const map = new Map<string, SetParameter[]>();
   for (const sp of setParams) {
     const cid = paramToControlId(sp["param-id"]);
@@ -328,7 +328,7 @@ function sectionIcon(icon: string, size = 16, style?: CSSProperties): ReactNode 
 }
 
 /** Find a control by id anywhere in the catalog */
-function findControlInCatalog(catalog: Catalog, id: string): Control | undefined {
+export function findControlInCatalog(catalog: Catalog, id: string): Control | undefined {
   function searchGroup(g: Group): Control | undefined {
     for (const c of g.controls ?? []) {
       if (c.id === id) return c;
@@ -356,8 +356,7 @@ function findControlInCatalog(catalog: Catalog, id: string): Control | undefined
 }
 
 /** Find the group a control belongs to */
-// @ts-ignore: reserved for future catalog enrichment
-function findControlGroupInCatalog(catalog: Catalog, controlId: string): Group | undefined {
+export function findControlGroupInCatalog(catalog: Catalog, controlId: string): Group | undefined {
   function searchGroup(g: Group): Group | undefined {
     for (const c of g.controls ?? []) {
       if (c.id === controlId) return g;
@@ -379,7 +378,7 @@ function findControlGroupInCatalog(catalog: Catalog, controlId: string): Group |
 }
 
 /** Find the parent control of an enhancement */
-function findParentControlInCatalog(catalog: Catalog, enhId: string): Control | undefined {
+export function findParentControlInCatalog(catalog: Catalog, enhId: string): Control | undefined {
   function searchGroup(g: Group): Control | undefined {
     for (const c of g.controls ?? []) {
       for (const enh of c.controls ?? []) {
@@ -419,7 +418,7 @@ interface PartLocation {
   index: number;
 }
 
-function findPartById(parts: ResolvedPart[], targetId: string): PartLocation | null {
+export function findPartById(parts: ResolvedPart[], targetId: string): PartLocation | null {
   for (let i = 0; i < parts.length; i++) {
     if (parts[i].id === targetId) {
       return { part: parts[i], parentArray: parts, index: i };
@@ -432,7 +431,7 @@ function findPartById(parts: ResolvedPart[], targetId: string): PartLocation | n
   return null;
 }
 
-function markSubtree(part: ResolvedPart, tailoring: "added" | "removed") {
+export function markSubtree(part: ResolvedPart, tailoring: "added" | "removed") {
   part._tailoring = tailoring;
   if (part.parts) {
     part.parts.forEach((child) => markSubtree(child, tailoring));
@@ -442,7 +441,7 @@ function markSubtree(part: ResolvedPart, tailoring: "added" | "removed") {
 /**
  * Render a single param according to OSCAL rendering rules.
  */
-function renderParamTextProfile(param: Param, paramMap: Record<string, Param>): string {
+export function renderParamTextProfile(param: Param, paramMap: Record<string, Param>): string {
   if (param.select) {
     const howMany = param.select["how-many"];
     const prefix = howMany === "one-or-more" ? "Selection (one or more)" : "Selection";
@@ -453,7 +452,7 @@ function renderParamTextProfile(param: Param, paramMap: Record<string, Param>): 
   return `[Assignment: ${label}]`;
 }
 
-function resolveInlineParamsProfile(text: string, paramMap: Record<string, Param>): string {
+export function resolveInlineParamsProfile(text: string, paramMap: Record<string, Param>): string {
   return text.replace(/\{\{\s*insert:\s*param\s*,\s*([^}]+?)\s*\}\}/g, (_match, id: string) => {
     const param = paramMap[id.trim()];
     if (!param) return `[Assignment: ${id.trim()}]`;
@@ -461,7 +460,7 @@ function resolveInlineParamsProfile(text: string, paramMap: Record<string, Param
   });
 }
 
-function resolveControlParts(
+export function resolveControlParts(
   catalogParts: Part[],
   alter?: { removes?: AlterRemove[]; adds?: AlterAdd[] },
 ): ResolvedPart[] {
