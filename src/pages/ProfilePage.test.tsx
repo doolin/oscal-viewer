@@ -1765,4 +1765,192 @@ describe("<ProfilePage /> D3 — OverviewView merge strategies", () => {
   });
 });
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   D4 — FamilyView, MetadataView fallbacks, ImportsView chip click, and
+        ControlModView edges (family-name fallback + enhancement params)
+
+   Targets:
+     - OverviewView family card onClick (L1579) — Overview→family navigate
+     - MetadataView nullish/ternary fallbacks (L1603-1628) — no parties,
+       no roles, no version/oscal-version, party without short-name
+     - ImportsView selected-control-id chip onClick (L1683)
+     - FamilyView control-row onClick (L1744) — family→control navigate
+     - ControlModView family-name fallback (L1796) — prefix not in
+       FAMILY_NAMES
+     - ControlModView enhancement-with-params inner forEach (L1807, L1810)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("<ProfilePage /> D4 — FamilyView, Metadata, Imports chip, ControlMod edges", () => {
+  it("OverviewView family card click navigates to the family view (L1579)", async () => {
+    const utils = await renderLoaded();
+    // OverviewView renders its own "Control Families" card. The sidebar is
+    // `<nav>`; the Overview card is in the content panel. Find the family
+    // card row outside `<nav>`.
+    const nav = utils.container.querySelector("nav");
+    const allACTexts = screen.getAllByText(/Access Control/);
+    const overviewCard = allACTexts.find((el) => !nav?.contains(el));
+    expect(overviewCard).toBeDefined();
+    fireEvent.click(overviewCard!);
+    await waitFor(() =>
+      expect(screen.getAllByText(/Base Controls/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("FamilyView control row click navigates to ControlModView (L1744)", async () => {
+    await renderLoaded();
+    // Navigate to FamilyView first.
+    fireEvent.click(screen.getAllByText(/Access Control/)[0]);
+    await waitFor(() => expect(screen.getAllByText(/Base Controls/).length).toBeGreaterThan(0));
+    // FamilyView shows a "Controls (N)" card with clickable rows. The row
+    // is a div whose first child span is the AC-1 label. Click the row.
+    const labelInFamilyCard = screen.getAllByText("AC-1")
+      .find((el) => /Base Controls|Controls \(\d+\)/.test(el.parentElement?.parentElement?.textContent || ""));
+    // Fallback to the second AC-1 occurrence (sidebar=0, FamilyView=1).
+    const target = labelInFamilyCard ?? screen.getAllByText("AC-1")[1];
+    fireEvent.click(target);
+    await waitFor(() =>
+      expect(screen.getAllByText(/Policy and Procedures/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("ImportsView selected-control-id chip click navigates to that control (L1683)", async () => {
+    await renderLoaded();
+    fireEvent.click(screen.getByText("Imports"));
+    await waitFor(() =>
+      expect(screen.getAllByText(/Selected Control IDs/).length).toBeGreaterThan(0),
+    );
+    // The chips are <span>s under the "Selected Control IDs" SectionLabel's
+    // sibling flex container; clicking the AC-1 chip should jump to ctrl-ac-1.
+    const label = screen.getAllByText(/Selected Control IDs/)[0];
+    const chipsContainer = label.nextElementSibling as HTMLElement;
+    const acChip = Array.from(chipsContainer.querySelectorAll<HTMLElement>("span"))
+      .find((s) => s.textContent === "AC-1");
+    expect(acChip).toBeDefined();
+    fireEvent.click(acChip!);
+    await waitFor(() =>
+      expect(screen.getAllByText(/Policy and Procedures/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("MetadataView renders defaults when version, oscal-version, and short-name are missing", async () => {
+    const p: Profile = {
+      ...RICH_PROFILE,
+      metadata: {
+        ...RICH_PROFILE.metadata,
+        version: undefined,
+        "oscal-version": undefined,
+        // party without short-name
+        parties: [{ uuid: "p-2", type: "person", name: "Solo Auditor" }],
+        roles: [],
+      },
+    };
+    await renderLoaded({ profile: p });
+    fireEvent.click(screen.getByText("Metadata"));
+    // The "—" placeholder appears for missing values; "Solo Auditor" renders
+    // without the " · short" suffix (covers the short-name ternary falsy at L1628).
+    await waitFor(() => {
+      expect(screen.getAllByText(/Solo Auditor/).length).toBeGreaterThan(0);
+    });
+    // person type renders without " · " because short-name is missing.
+    const personRow = screen.getAllByText(/Solo Auditor/)[0].parentElement!;
+    expect(personRow.textContent).toMatch(/person/);
+    expect(personRow.textContent).not.toMatch(/person · /);
+  });
+
+  it("MetadataView omits the Parties and Roles cards when parties/roles arrays are absent", async () => {
+    // Covers L1603/1604 nullish branches AND the `parties.length > 0` /
+    // `roles.length > 0` conditional cards.
+    const p: Profile = {
+      ...RICH_PROFILE,
+      metadata: { title: "Stripped Profile" },
+    };
+    await renderLoaded({ profile: p });
+    fireEvent.click(screen.getByText("Metadata"));
+    await waitFor(() =>
+      expect(screen.getAllByText(/Stripped Profile/).length).toBeGreaterThan(0),
+    );
+    expect(screen.queryByText(/^Parties$/)).toBeNull();
+    expect(screen.queryByText(/^Roles$/)).toBeNull();
+  });
+
+  it("ControlModView falls back to prefix.toUpperCase() when the family prefix is not in FAMILY_NAMES (L1796)", async () => {
+    // "xx" is not a NIST family prefix. ControlModView renders famName which
+    // falls back to "XX". The control title appears verbatim in the heading.
+    const cat: Catalog = {
+      uuid: "cat-xx",
+      metadata: { title: "Custom Catalog" },
+      groups: [
+        {
+          id: "xx",
+          title: "Experimental Family",
+          controls: [
+            {
+              id: "xx-1",
+              title: "Experimental Control",
+              props: [{ name: "label", value: "XX-1" }],
+              parts: [{ id: "xx-1-stmt", name: "statement", prose: "Experimental statement." }],
+            },
+          ],
+        },
+      ],
+    };
+    const p = profileWithImports([
+      { href: "#cat-res", "include-controls": [{ "with-ids": ["xx-1"] }] },
+    ]);
+    await renderLoaded({ profile: p, catalog: cat });
+    fireEvent.click(screen.getAllByText(/Experimental Family/)[0]);
+    fireEvent.click(screen.getAllByText("XX-1")[0]);
+    await waitFor(() =>
+      expect(screen.getAllByText(/Experimental statement/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("ControlModView paramMap walks enhancement.params when the catalog enhancement carries its own params (L1810)", async () => {
+    // The paramMap memo at L1802 iterates catalogControl.controls (the
+    // enhancement list) and forEach over each enh.params. With ac-1.1
+    // carrying an own param that's referenced from ac-1's prose, the
+    // inner `(p) => map[p.id] = p` runs and the resolved text appears.
+    const cat: Catalog = {
+      ...CATALOG,
+      groups: [
+        {
+          id: "ac",
+          title: "Access Control",
+          controls: [
+            {
+              id: "ac-1",
+              title: "Policy and Procedures",
+              props: [{ name: "label", value: "AC-1" }],
+              params: [{ id: "ac-1_prm_1", label: "organization-defined roles" }],
+              parts: [
+                { id: "ac-1-stmt", name: "statement", prose: "Refer to {{ insert: param, ac-1.1_prm_1 }}." },
+              ],
+              controls: [
+                {
+                  id: "ac-1.1",
+                  title: "Policy Updates",
+                  props: [{ name: "label", value: "AC-1(1)" }],
+                  // Enhancement carries its own param — covers L1810 inner arrow
+                  params: [{ id: "ac-1.1_prm_1", label: "the enhancement-defined frequency" }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    await renderLoaded({ catalog: cat });
+    fireEvent.click(screen.getAllByText(/Access Control/)[0]);
+    fireEvent.click(screen.getAllByText("AC-1")[0]);
+    // The enhancement's param should resolve into ac-1's prose because
+    // paramMap merged ac-1.1's params (this is the inner forEach at L1810).
+    await waitFor(() =>
+      expect(
+        screen.getAllByText(/the enhancement-defined frequency/).length,
+      ).toBeGreaterThan(0),
+    );
+  });
+});
+
+
 
