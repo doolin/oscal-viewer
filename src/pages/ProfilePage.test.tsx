@@ -1952,5 +1952,462 @@ describe("<ProfilePage /> D4 — FamilyView, Metadata, Imports chip, ControlMod 
   });
 });
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   D5 — ControlModView deep paths: set-parameter constraints/select/label,
+        CORE pill, fallback (no-catalog) views, Links resolution from
+        back-matter, enhancement row click + withdrawn pill,
+        ResolvedPartTree + FallbackAddedPartTree branches
 
+   This is the largest single PR in the coverage push — the ControlModView
+   block hosts most of ProfilePage's still-uncovered code.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("<ProfilePage /> D5 — set-parameter constraints, select, label", () => {
+  it("set-parameter with a `label` renders the parenthesized label alongside the param id (L1938)", async () => {
+    const p: Profile = {
+      ...RICH_PROFILE,
+      modify: {
+        ...(RICH_PROFILE.modify as object),
+        "set-parameters": [
+          { "param-id": "ac-1_prm_1", label: "the labelled parameter", values: ["v1"] },
+        ],
+      },
+    };
+    await renderLoaded({ profile: p });
+    fireEvent.click(screen.getAllByText(/Access Control/)[0]);
+    fireEvent.click(screen.getAllByText("AC-1")[0]);
+    await waitFor(() =>
+      expect(screen.getAllByText(/\(the labelled parameter\)/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("set-parameter with `constraints` renders each constraint's description (L1940-1942)", async () => {
+    const p: Profile = {
+      ...RICH_PROFILE,
+      modify: {
+        ...(RICH_PROFILE.modify as object),
+        "set-parameters": [
+          {
+            "param-id": "ac-1_prm_1",
+            constraints: [
+              { description: "Must be a senior official." },
+              { description: "Must rotate annually." },
+            ],
+          },
+        ],
+      },
+    };
+    await renderLoaded({ profile: p });
+    fireEvent.click(screen.getAllByText(/Access Control/)[0]);
+    fireEvent.click(screen.getAllByText("AC-1")[0]);
+    await waitFor(() =>
+      expect(screen.getAllByText(/Must be a senior official/).length).toBeGreaterThan(0),
+    );
+    expect(screen.getAllByText(/Must rotate annually/).length).toBeGreaterThan(0);
+  });
+
+  it("set-parameter constraint without description shows the 'No description' placeholder (L1942 ??)", async () => {
+    const p: Profile = {
+      ...RICH_PROFILE,
+      modify: {
+        ...(RICH_PROFILE.modify as object),
+        "set-parameters": [
+          { "param-id": "ac-1_prm_1", constraints: [{}] },
+        ],
+      },
+    };
+    await renderLoaded({ profile: p });
+    fireEvent.click(screen.getAllByText(/Access Control/)[0]);
+    fireEvent.click(screen.getAllByText("AC-1")[0]);
+    await waitFor(() =>
+      expect(screen.getAllByText(/No description/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("set-parameter with `select` overrides the catalog param's select (L1824)", async () => {
+    // ac-1_prm_1 is defined as a free-form label in CATALOG; the profile
+    // overrides it to a Selection. The control body's prose
+    // "Develop, document, and disseminate {{ insert: param, ac-1_prm_1 }}"
+    // should render with the Selection text.
+    const p: Profile = {
+      ...RICH_PROFILE,
+      modify: {
+        ...(RICH_PROFILE.modify as object),
+        "set-parameters": [
+          {
+            "param-id": "ac-1_prm_1",
+            select: { "how-many": "one-or-more", choice: ["weekly", "monthly"] },
+          },
+        ],
+      },
+    };
+    await renderLoaded({ profile: p });
+    fireEvent.click(screen.getAllByText(/Access Control/)[0]);
+    fireEvent.click(screen.getAllByText("AC-1")[0]);
+    await waitFor(() =>
+      expect(screen.getAllByText(/Selection \(one or more\)/).length).toBeGreaterThan(0),
+    );
+  });
+});
+
+describe("<ProfilePage /> D5 — CORE pill and fallback views (no catalog)", () => {
+  it("renders the CORE pill when an alter add carries a `props: [{ name: 'CORE' }]` (L1875, L1888)", async () => {
+    const p: Profile = {
+      ...RICH_PROFILE,
+      modify: {
+        ...(RICH_PROFILE.modify as object),
+        alters: [
+          {
+            "control-id": "ac-1",
+            adds: [
+              {
+                props: [{ name: "CORE", value: "true" }],
+                parts: [{ id: "ac-1-core", name: "statement", prose: "CORE-marked add." }],
+              },
+            ],
+          },
+        ],
+      },
+    };
+    await renderLoaded({ profile: p });
+    fireEvent.click(screen.getAllByText(/Access Control/)[0]);
+    fireEvent.click(screen.getAllByText("AC-1")[0]);
+    await waitFor(() =>
+      expect(screen.getAllByText("CORE").length).toBeGreaterThan(0),
+    );
+  });
+
+  it("no-catalog fallback view renders the target/position label and Addition card (L1985, L1989)", async () => {
+    const p: Profile = {
+      ...RICH_PROFILE,
+      modify: {
+        ...(RICH_PROFILE.modify as object),
+        alters: [
+          {
+            "control-id": "ac-1",
+            adds: [
+              {
+                "by-id": "some-target",
+                position: "after",
+                parts: [
+                  { id: "fallback-part", name: "guidance", title: "Fallback Title", prose: "Fallback prose." },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    };
+    await renderLoaded({ profile: p, withCatalog: false });
+    fireEvent.click(screen.getAllByText(/Access Control/)[0]);
+    fireEvent.click(screen.getAllByText("AC-1")[0]);
+    await waitFor(() =>
+      expect(screen.getAllByText(/Fallback prose/).length).toBeGreaterThan(0),
+    );
+    expect(screen.getAllByText(/target: some-target/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Fallback Title/).length).toBeGreaterThan(0);
+  });
+
+  it("no-catalog fallback view renders alter `props` via PropPill (L1992-1995)", async () => {
+    const p: Profile = {
+      ...RICH_PROFILE,
+      modify: {
+        ...(RICH_PROFILE.modify as object),
+        alters: [
+          {
+            "control-id": "ac-1",
+            adds: [
+              {
+                parts: [{ id: "fb-prop-part", name: "statement", prose: "Prop-bearing add." }],
+                props: [{ name: "priority", value: "high" }],
+              },
+            ],
+          },
+        ],
+      },
+    };
+    await renderLoaded({ profile: p, withCatalog: false });
+    fireEvent.click(screen.getAllByText(/Access Control/)[0]);
+    fireEvent.click(screen.getAllByText("AC-1")[0]);
+    await waitFor(() =>
+      expect(screen.getAllByText(/priority: high/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("no-catalog fallback view renders the Removals section with by-id / by-name / by-class entries (L2001-2014)", async () => {
+    const p: Profile = {
+      ...RICH_PROFILE,
+      modify: {
+        ...(RICH_PROFILE.modify as object),
+        alters: [
+          {
+            "control-id": "ac-1",
+            removes: [
+              { "by-id": "rm-id-1" },
+              { "by-name": "rm-name-1" },
+              { "by-class": "rm-class-1" },
+              {}, // unknown — covers `?? "unknown"` fallback
+            ],
+          },
+        ],
+      },
+    };
+    await renderLoaded({ profile: p, withCatalog: false });
+    fireEvent.click(screen.getAllByText(/Access Control/)[0]);
+    fireEvent.click(screen.getAllByText("AC-1")[0]);
+    await waitFor(() => expect(screen.getAllByText(/Removals/).length).toBeGreaterThan(0));
+    expect(screen.getAllByText("rm-id-1").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("rm-name-1").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("rm-class-1").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/^unknown$/).length).toBeGreaterThan(0);
+  });
+
+  it("renders the 'No modifications defined' empty state when control has no catalog/alter/setParams (L2021-2030)", async () => {
+    const p: Profile = {
+      ...RICH_PROFILE,
+      imports: [{ href: "#cat-res", "include-controls": [{ "with-ids": ["unmodified-ctrl"] }] }],
+      modify: { alters: [], "set-parameters": [] },
+    };
+    await renderLoaded({ profile: p, withCatalog: false });
+    // Navigate via the family. familyPrefix("unmodified-ctrl") = "unmodified".
+    fireEvent.click(screen.getAllByText(/UNMODIFIED/)[0]);
+    fireEvent.click(screen.getAllByText(/UNMODIFIED-CTRL/)[0]);
+    await waitFor(() =>
+      expect(screen.getAllByText(/No modifications defined for this control/).length).toBeGreaterThan(0),
+    );
+  });
+});
+
+describe("<ProfilePage /> D5 — Links resolved through catalog back-matter", () => {
+  /** Catalog with back-matter resources + a control whose links reference
+   *  them via `#`-href as well as a literal URL. Exercises the entire
+   *  Links rendering block at L2044-2076 plus L1871 resMap construction. */
+  const CAT_WITH_LINKS: Catalog = {
+    uuid: "cat-links",
+    metadata: { title: "Linked Catalog" },
+    "back-matter": {
+      resources: [
+        { uuid: "res-1", title: "Linked Policy Reference",
+          rlinks: [{ href: "https://example.com/policy", "media-type": "text/html" }] },
+        { uuid: "res-2", citation: { text: "Citation-only Resource" } },
+      ],
+    },
+    groups: [
+      {
+        id: "ac",
+        title: "Access Control",
+        controls: [
+          {
+            id: "ac-1",
+            title: "Policy and Procedures",
+            props: [{ name: "label", value: "AC-1" }],
+            parts: [{ id: "ac-1-stmt", name: "statement", prose: "AC-1 body." }],
+            links: [
+              { href: "#res-1", rel: "reference", text: "Policy" },             // resolved via resMap
+              { href: "#res-2", rel: "related" },                                 // resolved via citation
+              { href: "https://example.com/external", rel: "required", text: "Ext" }, // literal URL, no `#`
+              { href: "#nonexistent", rel: "related" },                          // unresolved, filtered out
+              { href: "#res-1", rel: "irrelevant-rel" },                         // filtered by rel filter
+            ],
+          },
+        ],
+      },
+    ],
+  };
+
+  it("renders backmatter-resolved links and a literal-URL link in the References card (L2044-2076)", async () => {
+    const p = profileWithImports(
+      [{ href: "#cat-res", "include-controls": [{ "with-ids": ["ac-1"] }] }],
+    );
+    await renderLoaded({ profile: p, catalog: CAT_WITH_LINKS });
+    fireEvent.click(screen.getAllByText(/Access Control/)[0]);
+    fireEvent.click(screen.getAllByText("AC-1")[0]);
+    await waitFor(() =>
+      expect(screen.getAllByText(/References/).length).toBeGreaterThan(0),
+    );
+    // `#res-1` resolves → title from the resource
+    expect(screen.getAllByText(/Linked Policy Reference/).length).toBeGreaterThan(0);
+    // `#res-2` resolves but has no title → citation text fallback
+    expect(screen.getAllByText(/Citation-only Resource/).length).toBeGreaterThan(0);
+    // Literal-URL with no `#` — kept by the filter, rendered as `text`
+    expect(screen.getAllByText(/Ext/).length).toBeGreaterThan(0);
+    // Unresolved `#nonexistent` and `irrelevant-rel` are filtered out
+    expect(screen.queryByText(/nonexistent/)).toBeNull();
+  });
+});
+
+describe("<ProfilePage /> D5 — Enhancements row click and Withdrawn pill", () => {
+  it("clicking an enhancement row in the Enhancements card navigates to the enhancement detail (L2095)", async () => {
+    await renderLoaded();
+    fireEvent.click(screen.getAllByText(/Access Control/)[0]);
+    fireEvent.click(screen.getAllByText("AC-1")[0]);
+    await waitFor(() =>
+      expect(screen.getAllByText(/Control Enhancements/).length).toBeGreaterThan(0),
+    );
+    // The enhancement row's label "AC-1(1)" appears in the card; click it.
+    const enhRow = screen.getAllByText(/AC-1\(1\)/).find((el) =>
+      /Control Enhancements/.test(el.closest('div[style*="padding"]')?.parentElement?.textContent || ""),
+    ) ?? screen.getAllByText(/AC-1\(1\)/).slice(-1)[0];
+    fireEvent.click(enhRow);
+    await waitFor(() =>
+      expect(screen.getAllByText(/Policy Updates/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("withdrawn enhancements render the 'Withdrawn' pill (L2114)", async () => {
+    const cat: Catalog = {
+      ...CATALOG,
+      groups: [
+        {
+          id: "ac",
+          title: "Access Control",
+          controls: [
+            {
+              id: "ac-1",
+              title: "Policy and Procedures",
+              props: [{ name: "label", value: "AC-1" }],
+              parts: [{ id: "ac-1-stmt", name: "statement", prose: "AC-1 body." }],
+              controls: [
+                {
+                  id: "ac-1.1",
+                  title: "Withdrawn Enhancement",
+                  props: [
+                    { name: "label", value: "AC-1(1)" },
+                    { name: "status", value: "withdrawn" },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    await renderLoaded({ catalog: cat });
+    fireEvent.click(screen.getAllByText(/Access Control/)[0]);
+    fireEvent.click(screen.getAllByText("AC-1")[0]);
+    await waitFor(() =>
+      expect(screen.getAllByText(/Withdrawn/).length).toBeGreaterThan(0),
+    );
+  });
+});
+
+describe("<ProfilePage /> D5 — ResolvedPartTree and FallbackAddedPartTree branches", () => {
+  it("ResolvedPartTree renders a part label and its links (with resource-fragment) (L2169, L2194-2202)", async () => {
+    const cat: Catalog = {
+      ...CATALOG,
+      groups: [
+        {
+          id: "ac",
+          title: "Access Control",
+          controls: [
+            {
+              id: "ac-1",
+              title: "Policy and Procedures",
+              props: [{ name: "label", value: "AC-1" }],
+              parts: [
+                {
+                  id: "ac-1-stmt",
+                  name: "statement",
+                  props: [{ name: "label", value: "a." }],
+                  prose: "Statement (a) prose.",
+                  links: [
+                    { href: "#related-doc", rel: "reference", text: "Doc",
+                      "resource-fragment": "section-2" },
+                    { href: "https://example.com/external" },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    await renderLoaded({ catalog: cat });
+    fireEvent.click(screen.getAllByText(/Access Control/)[0]);
+    fireEvent.click(screen.getAllByText("AC-1")[0]);
+    await waitFor(() =>
+      expect(screen.getAllByText(/Statement \(a\) prose/).length).toBeGreaterThan(0),
+    );
+    // partLabel rendered ("a.")
+    expect(screen.getAllByText(/^a\.$/).length).toBeGreaterThan(0);
+    // Resource-fragment-bearing link: "Doc — section-2"
+    expect(screen.getAllByText(/Doc — section-2/).length).toBeGreaterThan(0);
+    // Plain link: href used as display text when no `text`
+    expect(screen.getAllByText(/https:\/\/example\.com\/external/).length).toBeGreaterThan(0);
+  });
+
+  it("ResolvedPartTree recurses into nested sub-parts (L2218)", async () => {
+    const cat: Catalog = {
+      ...CATALOG,
+      groups: [
+        {
+          id: "ac",
+          title: "Access Control",
+          controls: [
+            {
+              id: "ac-1",
+              title: "Policy and Procedures",
+              props: [{ name: "label", value: "AC-1" }],
+              parts: [
+                {
+                  id: "ac-1-stmt",
+                  name: "statement",
+                  prose: "Parent statement.",
+                  parts: [
+                    { id: "ac-1-stmt-a", name: "item",
+                      props: [{ name: "label", value: "a." }],
+                      prose: "Nested item (a)." },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    await renderLoaded({ catalog: cat });
+    fireEvent.click(screen.getAllByText(/Access Control/)[0]);
+    fireEvent.click(screen.getAllByText("AC-1")[0]);
+    await waitFor(() =>
+      expect(screen.getAllByText(/Nested item \(a\)/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("FallbackAddedPartTree renders title + nested sub-parts (L2247-2261)", async () => {
+    const p: Profile = {
+      ...RICH_PROFILE,
+      modify: {
+        ...(RICH_PROFILE.modify as object),
+        alters: [
+          {
+            "control-id": "ac-1",
+            adds: [
+              {
+                parts: [
+                  {
+                    name: "section",
+                    title: "Top-Level Added Section",
+                    props: [{ name: "label", value: "S1" }],
+                    parts: [
+                      { name: "subsec", prose: "Nested fallback prose." },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    };
+    await renderLoaded({ profile: p, withCatalog: false });
+    fireEvent.click(screen.getAllByText(/Access Control/)[0]);
+    fireEvent.click(screen.getAllByText("AC-1")[0]);
+    await waitFor(() =>
+      expect(screen.getAllByText(/Top-Level Added Section/).length).toBeGreaterThan(0),
+    );
+    expect(screen.getAllByText(/Nested fallback prose/).length).toBeGreaterThan(0);
+    // partLabel rendered on the fallback tree node
+    expect(screen.getAllByText(/^S1$/).length).toBeGreaterThan(0);
+  });
+});
 
