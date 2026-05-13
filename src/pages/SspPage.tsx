@@ -262,7 +262,7 @@ interface SspParsed {
    PARSER
    ═══════════════════════════════════════════════════════════════════════════ */
 
-function txt(v: unknown): string {
+export function txt(v: unknown): string {
   if (!v) return "";
   if (typeof v === "string") return v;
   if (typeof v === "object" && v !== null && "prose" in v)
@@ -270,13 +270,13 @@ function txt(v: unknown): string {
   return String(v);
 }
 
-function fmtDate(s?: string) {
+export function fmtDate(s?: string) {
   if (!s) return "—";
   try { return new Date(s).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }); }
   catch { return s; }
 }
 
-function trunc(s: string, n: number) {
+export function trunc(s: string, n: number) {
   return s.length > n ? s.slice(0, n) + "\u2026" : s;
 }
 
@@ -976,7 +976,7 @@ function IcoNetwork({ size = 16, style }: IconProps) {
 }
 
 /** Map a component type string to its nav icon key */
-function componentTypeNavKey(type: string): string {
+export function componentTypeNavKey(type: string): string {
   switch (type) {
     case "this-system": return "this-system";
     case "system": return "ext-system";
@@ -997,7 +997,7 @@ function componentTypeNavKey(type: string): string {
 }
 
 /** Component-type color mapping */
-function componentTypeColor(type: string): string {
+export function componentTypeColor(type: string): string {
   switch (type) {
     case "this-system": return colors.navy;
     case "system": return colors.cobalt;
@@ -1018,7 +1018,7 @@ function componentTypeColor(type: string): string {
 }
 
 /** Map an inventory-item asset-type prop to the best icon key */
-function assetTypeIconKey(assetType: string): string {
+export function assetTypeIconKey(assetType: string): string {
   switch (assetType.toLowerCase()) {
     case "os": return "software";
     case "database": return "software";
@@ -1044,7 +1044,7 @@ function assetTypeIconKey(assetType: string): string {
 }
 
 /** Map an inventory-item asset-type prop to a color */
-function assetTypeColor(assetType: string): string {
+export function assetTypeColor(assetType: string): string {
   switch (assetType.toLowerCase()) {
     case "os": return colors.brightBlue;
     case "database": return colors.cobalt;
@@ -1061,7 +1061,7 @@ function assetTypeColor(assetType: string): string {
 }
 
 /** Resolve the best icon key and color for an inventory item, checking asset-type then component type */
-function inventoryItemIcon(
+export function inventoryItemIcon(
   ii: InventoryItem,
   components: SspComponent[],
 ): { iconKey: string; color: string } {
@@ -1107,13 +1107,13 @@ const FAMILY_NAMES: Record<string, string> = {
 };
 
 /** Extract the family prefix from a control-id, e.g. "ac-1" → "ac", "ac-2.1" → "ac" */
-function getFamily(controlId: string): string {
+export function getFamily(controlId: string): string {
   const m = controlId.match(/^([a-z]+)/i);
   return m ? m[1].toLowerCase() : controlId;
 }
 
 /** For enhancements like "ac-2.1" return the parent "ac-2"; for base controls return null */
-function getParentControlId(controlId: string): string | null {
+export function getParentControlId(controlId: string): string | null {
   const dotIdx = controlId.lastIndexOf(".");
   if (dotIdx === -1) return null;
   return controlId.slice(0, dotIdx);
@@ -1563,7 +1563,7 @@ function ControlStatusDashboard({ summary, navigate }: { summary: ControlStatusD
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /** Find a control by ID anywhere in the catalog (groups, sub-groups, and enhancements) */
-function findCatalogControl(catalog: OscalCatalog | null, controlId: string): CatalogControl | undefined {
+export function findCatalogControl(catalog: OscalCatalog | null, controlId: string): CatalogControl | undefined {
   if (!catalog) return undefined;
   function searchGroup(g: CatalogGroup): CatalogControl | undefined {
     for (const c of g.controls ?? []) {
@@ -1592,7 +1592,7 @@ function findCatalogControl(catalog: OscalCatalog | null, controlId: string): Ca
 }
 
 /** Find a specific part by id anywhere in a control's part tree */
-function findPartById(parts: CatalogPart[], partId: string): CatalogPart | undefined {
+export function findPartById(parts: CatalogPart[], partId: string): CatalogPart | undefined {
   for (const p of parts) {
     if (p.id === partId) return p;
     if (p.parts) {
@@ -1604,7 +1604,7 @@ function findPartById(parts: CatalogPart[], partId: string): CatalogPart | undef
 }
 
 /** Build a param map from a catalog control (including parent for enhancements) */
-function buildCatalogParamMap(catalog: OscalCatalog | null, control: CatalogControl): Record<string, CatalogParam> {
+export function buildCatalogParamMap(catalog: OscalCatalog | null, control: CatalogControl): Record<string, CatalogParam> {
   const map: Record<string, CatalogParam> = {};
   if (catalog) {
     function searchParent(g: CatalogGroup): CatalogControl | undefined {
@@ -1630,7 +1630,7 @@ function buildCatalogParamMap(catalog: OscalCatalog | null, control: CatalogCont
 }
 
 /** Render a single catalog param to text per OSCAL rules */
-function renderCatalogParamText(param: CatalogParam, paramMap: Record<string, CatalogParam>): string {
+export function renderCatalogParamText(param: CatalogParam, paramMap: Record<string, CatalogParam>): string {
   if (param.select) {
     const howMany = param.select["how-many"];
     const prefix = howMany === "one-or-more" ? "Selection (one or more)" : "Selection";
@@ -1642,7 +1642,7 @@ function renderCatalogParamText(param: CatalogParam, paramMap: Record<string, Ca
 }
 
 /** Replace {{ insert: param, <id> }} tokens in prose */
-function resolveCatalogInlineParams(text: string, paramMap: Record<string, CatalogParam>): string {
+export function resolveCatalogInlineParams(text: string, paramMap: Record<string, CatalogParam>): string {
   return text.replace(/\{\{\s*insert:\s*param\s*,\s*([^}]+?)\s*\}\}/g, (_match, id: string) => {
     const param = paramMap[id.trim()];
     if (!param) return `[Assignment: ${id.trim()}]`;
@@ -1651,7 +1651,7 @@ function resolveCatalogInlineParams(text: string, paramMap: Record<string, Catal
 }
 
 /** Get the label prop from a catalog control/part */
-function getCatalogLabel(props?: { name: string; value: string }[]): string {
+export function getCatalogLabel(props?: { name: string; value: string }[]): string {
   if (!props) return "";
   const lbl = props.find(p => p.name === "label" && (p as { class?: string }).class !== "zero-padded");
   return lbl?.value ?? props.find(p => p.name === "label")?.value ?? "";
@@ -1905,7 +1905,7 @@ const REL_PROVIDED_BY = "provided-by";
 const REL_USED_BY = "used-by";
 
 /** Extract the UUID portion from a link href like "#uuid" or "uuid". */
-function hrefToUuid(href: string): string {
+export function hrefToUuid(href: string): string {
   if (!href) return "";
   return href.startsWith("#") ? href.slice(1) : href;
 }
@@ -1917,7 +1917,7 @@ interface ComponentHierarchy {
   childrenByIndex: Map<number, number[]>;
 }
 
-function buildComponentHierarchy(components: SspComponent[]): ComponentHierarchy {
+export function buildComponentHierarchy(components: SspComponent[]): ComponentHierarchy {
   const indexByUuid = new Map<string, number>();
   components.forEach((c, i) => indexByUuid.set(c.uuid, i));
 
