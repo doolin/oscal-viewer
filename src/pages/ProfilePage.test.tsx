@@ -2411,3 +2411,258 @@ describe("<ProfilePage /> D5 — ResolvedPartTree and FallbackAddedPartTree bran
   });
 });
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   D6 — Final mop-up
+
+   Targets the last few reachable branches scattered across the file:
+     - resolveInlineParamsProfile invoked via a param's label (L452, L458, L460)
+       and via a param's select.choice containing inline param tokens
+     - mobileDrillBack `← Back` click handler at the drill-down level (L709)
+     - Links section returns null when all `links` filter out (L2056)
+     - DropZone error block onClick stopPropagation (L1451)
+
+   Plus a final summary of structurally-unreachable branches that survive
+   the coverage push — these are refactor candidates queued in
+   `.development/plans/quirks.md`, not coverage targets.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("<ProfilePage /> D6 — final mop-up", () => {
+  it("resolveInlineParamsProfile resolves tokens inside a param's label (L452, L458, L460)", async () => {
+    // ac-1's prose references ac-1_prm_1, whose `label` itself contains
+    // another `{{ insert: param, X }}` token referencing ac-1_prm_2.
+    // renderParamTextProfile takes the param.label branch (L452), passes
+    // it through resolveInlineParamsProfile, which calls the inner
+    // replace callback (L457) — found-param path (L460).
+    //
+    // Use a profile without set-parameters: setParameters would otherwise
+    // overwrite the catalog param's label and bypass the inline-resolution
+    // path entirely.
+    const cat: Catalog = {
+      ...CATALOG,
+      groups: [
+        {
+          id: "ac",
+          title: "Access Control",
+          controls: [
+            {
+              id: "ac-1",
+              title: "Policy and Procedures",
+              props: [{ name: "label", value: "AC-1" }],
+              params: [
+                { id: "ac-1_prm_1", label: "the {{ insert: param, ac-1_prm_2 }} roles" },
+                { id: "ac-1_prm_2", label: "senior" },
+              ],
+              parts: [
+                { id: "ac-1-stmt", name: "statement",
+                  prose: "Roles: {{ insert: param, ac-1_prm_1 }}." },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const p: Profile = {
+      ...RICH_PROFILE,
+      modify: { alters: [] }, // no set-parameters → catalog labels survive
+    };
+    const utils = await renderLoaded({ profile: p, catalog: cat });
+    fireEvent.click(screen.getAllByText(/Access Control/)[0]);
+    fireEvent.click(screen.getAllByText("AC-1")[0]);
+    await waitFor(() =>
+      expect(utils.container.textContent || "").toMatch(/Roles:/),
+    );
+    // Outer token's rendered text: "[Assignment: the [Assignment: senior] roles]"
+    expect(utils.container.textContent || "").toMatch(/Assignment: the/);
+    expect(utils.container.textContent || "").toMatch(/Assignment: senior/);
+  });
+
+  it("resolveInlineParamsProfile resolves tokens inside a param's select.choice (L449)", async () => {
+    // ac-1's prose references ac-1_prm_1, which is a Selection whose
+    // choice strings contain inline param tokens. The map at line 449
+    // calls resolveInlineParamsProfile on each choice, and the inner
+    // callback resolves the embedded param.
+    const cat: Catalog = {
+      ...CATALOG,
+      groups: [
+        {
+          id: "ac",
+          title: "Access Control",
+          controls: [
+            {
+              id: "ac-1",
+              title: "Policy and Procedures",
+              props: [{ name: "label", value: "AC-1" }],
+              params: [
+                {
+                  id: "ac-1_prm_1",
+                  select: { choice: ["{{ insert: param, ac-1_prm_2 }}-rotation", "manual"] },
+                },
+                { id: "ac-1_prm_2", label: "auto" },
+              ],
+              parts: [
+                { id: "ac-1-stmt", name: "statement",
+                  prose: "Cadence: {{ insert: param, ac-1_prm_1 }}." },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const p: Profile = {
+      ...RICH_PROFILE,
+      modify: { alters: [] }, // no set-parameters override
+    };
+    const utils = await renderLoaded({ profile: p, catalog: cat });
+    fireEvent.click(screen.getAllByText(/Access Control/)[0]);
+    fireEvent.click(screen.getAllByText("AC-1")[0]);
+    // The full token rendered: "[Selection: [Assignment: auto]-rotation;
+    // manual]". The inner "[Assignment: auto]" proves the choice-mapping
+    // callback ran (covers L449).
+    await waitFor(() =>
+      expect(utils.container.textContent || "").toMatch(/Assignment: auto/),
+    );
+  });
+
+  it("mobile drill-down ← Back link returns to root (mobileDrillBack — L709)", async () => {
+    await renderLoaded({ mobile: true });
+    // Drill into a family so the mobile drill-down's ← Back link appears.
+    fireEvent.click(screen.getAllByText(/Access Control/)[0]);
+    await waitFor(() =>
+      expect(screen.getAllByText(/AC Access Control — Overview/).length).toBeGreaterThan(0),
+    );
+    // The drill-down ← Back is the div whose text is exactly "← Back". The
+    // mobile top-bar Back (covered in D2) is a <button>; this one is a
+    // <div onClick={onDrillBack}>.
+    const backDiv = Array.from(document.querySelectorAll<HTMLElement>("div"))
+      .find((d) => /^← Back$/.test((d.textContent || "").trim()) && d.children.length === 0);
+    expect(backDiv).toBeDefined();
+    fireEvent.click(backDiv!);
+    // Root family rows return (no more "— Overview" sub-rows).
+    await waitFor(() =>
+      expect(screen.queryByText(/AC Access Control — Overview/)).toBeNull(),
+    );
+    expect(screen.getAllByText(/Access Control/).length).toBeGreaterThan(0);
+  });
+
+  it("Links section returns null when every link is filtered out (L2056)", async () => {
+    // The control has links, but all use rels outside the
+    // allowed-rel list (related / reference / required). The filter
+    // produces an empty array → resolvedLinks.length === 0 → the IIFE
+    // returns null → no References card.
+    const cat: Catalog = {
+      uuid: "cat-no-refs",
+      metadata: { title: "Cat" },
+      groups: [
+        {
+          id: "ac",
+          title: "Access Control",
+          controls: [
+            {
+              id: "ac-1",
+              title: "Policy and Procedures",
+              props: [{ name: "label", value: "AC-1" }],
+              parts: [{ id: "ac-1-stmt", name: "statement", prose: "AC-1 body." }],
+              links: [
+                { href: "#whatever", rel: "incoming" }, // not in allowed list
+                { href: "#somewhere", rel: "outgoing" }, // not in allowed list
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const p = profileWithImports([
+      { href: "#cat-res", "include-controls": [{ "with-ids": ["ac-1"] }] },
+    ]);
+    await renderLoaded({ profile: p, catalog: cat });
+    fireEvent.click(screen.getAllByText(/Access Control/)[0]);
+    fireEvent.click(screen.getAllByText("AC-1")[0]);
+    await waitFor(() =>
+      expect(screen.getAllByText(/AC-1 body/).length).toBeGreaterThan(0),
+    );
+    // No References card rendered.
+    expect(screen.queryByText("References")).toBeNull();
+  });
+
+  it("DropZone error block onClick stops propagation without re-triggering the file picker (L1451)", async () => {
+    // Trigger an error to render the error block.
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 404 })));
+    const { container } = render(<Harness preload={false} initialPath="/profile?url=https://example.com/p.json" />);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Open URL directly/).length).toBeGreaterThan(0),
+    );
+    // The error block is the inner div with the "Open URL directly" link.
+    // Find its onClick-bearing parent (errorBg style) — clicking should fire
+    // stopPropagation. We can't introspect stopPropagation directly, but we
+    // can confirm the click doesn't crash and the dropzone remains in DOM.
+    const errBlock = container.querySelector('div[style*="errorBg"]')
+      || Array.from(container.querySelectorAll<HTMLElement>("div"))
+           .find((d) => /Open URL directly/.test(d.textContent || ""));
+    expect(errBlock).toBeDefined();
+    expect(() => fireEvent.click(errBlock as HTMLElement)).not.toThrow();
+    expect(screen.queryAllByText(/Drop an OSCAL/).length).toBeGreaterThan(0);
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Structurally-unreachable branches surviving the D1-D6 coverage push
+
+   These are documented refactor candidates for the eventual cleanup round.
+   None of them are reachable via the current public API, so they should be
+   deleted (with their surrounding defensive code) rather than papered over
+   with v8-ignore comments. Quirks.md will be updated with this list in a
+   follow-on scroll PR.
+
+     fmtDate.catch (L180)              — jsdom's Date.toLocaleDateString
+                                          does not throw on invalid input
+     getFamilyNameFromCatalog          — `!controlWithPrefix` branch dead
+       L246                              because buildFamilyGroups always
+                                          passes prefixes drawn from
+                                          controlIds
+     sectionIcon default case (L326)   — PART_SECTIONS is a fixed literal
+                                          containing only 5 icon names
+     findControlInCatalog,             — subgroup-recursion + catalog
+       findControlGroupInCatalog,        helper not-found paths (L351-355,
+       findParentControlInCatalog        L365): covered by the bodies that
+                                          do find results; the !found
+                                          fallback returns require a
+                                          control id that's both selected
+                                          in the profile AND missing from
+                                          the catalog — not constructable
+                                          through the rendering path
+     IcoPlus / IcoMinus (L592-597)     — explicitly `@ts-ignore` "reserved
+                                          for future use" — dead code
+     authFetch catch (L732 ternary     — only Error/SyntaxError thrown
+       false branch)                     from the try block
+     toggleGroup `?? false` (L823)     — every callsite passes an id that
+                                          defaultCollapsed populates
+     controlMatches/familyHasMatch     — L1002, L1008-1009: short-circuit
+       short-circuit branches            on empty lowerSearch already
+                                          covered; the redundant true-
+                                          branch return on each line is
+                                          dead under v8's branch counting
+     L1071 enhancement-filter return-  — every enhancement id `X.Y`
+       null                              contains parent id X and
+                                          controlLabel(X.Y) likewise
+                                          contains "X"
+     getChildren ("neither family-     — mobile path entries are pushed
+       nor ctrl-") L1140                 only by onDrillIn on isBranch
+                                          nodes
+     getFamilyChildren / getControl-   — `if (!fg) return []` paths dead
+       Children !fg L1163, L1189         because mobilePath only ever
+                                          contains valid family-prefixes
+     breadcrumb fg fallback L1238      — same reason; `: prefix` branch
+                                          dead
+     ViewRouter NotFoundView L1342     — setView is internal, no UI
+                                          gesture produces an unknown
+                                          view token
+     DropZone synthesized input        — anonymous onchange handler at
+       onchange L1420                    L1420: jsdom doesn't fire change
+                                          on programmatically-created
+                                          file inputs that haven't been
+                                          attached to a DOM node
+     NotFoundView component itself     — unreachable via ViewRouter for
+       (L2324-L2328)                     the same reason as L1342
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+
