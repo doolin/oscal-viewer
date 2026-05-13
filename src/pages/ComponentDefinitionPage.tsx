@@ -216,7 +216,7 @@ function implLabel(impl: ControlImplementation, index: number, resolvedTitle?: s
 /* ── Catalog lookup helpers ── */
 
 /** Find a control by ID anywhere in the catalog (groups, sub-groups, and enhancements) */
-function findCatalogControl(catalog: OscalCatalog | null, controlId: string): CatalogControl | undefined {
+export function findCatalogControl(catalog: OscalCatalog | null, controlId: string): CatalogControl | undefined {
   if (!catalog) return undefined;
   function searchGroup(g: CatalogGroup): CatalogControl | undefined {
     for (const c of g.controls ?? []) {
@@ -245,7 +245,7 @@ function findCatalogControl(catalog: OscalCatalog | null, controlId: string): Ca
 }
 
 /** Find a specific part by id anywhere in a control's part tree */
-function findPartById(parts: CatalogPart[], partId: string): CatalogPart | undefined {
+export function findPartById(parts: CatalogPart[], partId: string): CatalogPart | undefined {
   for (const p of parts) {
     if (p.id === partId) return p;
     if (p.parts) {
@@ -257,7 +257,7 @@ function findPartById(parts: CatalogPart[], partId: string): CatalogPart | undef
 }
 
 /** Build a param map from a catalog control (including parent for enhancements) */
-function buildCatalogParamMap(catalog: OscalCatalog | null, control: CatalogControl): Record<string, CatalogParam> {
+export function buildCatalogParamMap(catalog: OscalCatalog | null, control: CatalogControl): Record<string, CatalogParam> {
   const map: Record<string, CatalogParam> = {};
   // If this is an enhancement, also include parent params
   if (catalog) {
@@ -284,7 +284,7 @@ function buildCatalogParamMap(catalog: OscalCatalog | null, control: CatalogCont
 }
 
 /** Render a single catalog param to text per OSCAL rules */
-function renderCatalogParamText(param: CatalogParam, paramMap: Record<string, CatalogParam>): string {
+export function renderCatalogParamText(param: CatalogParam, paramMap: Record<string, CatalogParam>): string {
   if (param.select) {
     const howMany = param.select["how-many"];
     const prefix = howMany === "one-or-more" ? "Selection (one or more)" : "Selection";
@@ -296,7 +296,7 @@ function renderCatalogParamText(param: CatalogParam, paramMap: Record<string, Ca
 }
 
 /** Replace {{ insert: param, <id> }} tokens in prose */
-function resolveCatalogInlineParams(text: string, paramMap: Record<string, CatalogParam>): string {
+export function resolveCatalogInlineParams(text: string, paramMap: Record<string, CatalogParam>): string {
   return text.replace(/\{\{\s*insert:\s*param\s*,\s*([^}]+?)\s*\}\}/g, (_match, id: string) => {
     const param = paramMap[id.trim()];
     if (!param) return `[Assignment: ${id.trim()}]`;
@@ -305,7 +305,7 @@ function resolveCatalogInlineParams(text: string, paramMap: Record<string, Catal
 }
 
 /** Get the label prop from a catalog control/part */
-function getCatalogLabel(props?: { name: string; value: string }[]): string {
+export function getCatalogLabel(props?: { name: string; value: string }[]): string {
   if (!props) return "";
   const lbl = props.find(p => p.name === "label" && (p as { class?: string }).class !== "zero-padded");
   return lbl?.value ?? props.find(p => p.name === "label")?.value ?? "";
