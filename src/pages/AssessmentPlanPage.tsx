@@ -85,7 +85,7 @@ interface PlanParsed {
    PARSER
    ═══════════════════════════════════════════════════════════════════════════ */
 
-function txt(v: unknown): string {
+export function txt(v: unknown): string {
   if (!v) return "";
   if (typeof v === "string") return v;
   if (typeof v === "object" && v !== null && "prose" in v)
@@ -93,14 +93,14 @@ function txt(v: unknown): string {
   return String(v);
 }
 
-function fmtDate(s?: string) {
+export function fmtDate(s?: string) {
   if (!s) return "—";
   try {
     return new Date(s).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
   } catch { return s; }
 }
 
-function trunc(s: string, n: number) {
+export function trunc(s: string, n: number) {
   return s.length > n ? s.slice(0, n) + "\u2026" : s;
 }
 
@@ -131,7 +131,7 @@ function MarkupBlock({ value, style }: { value: unknown; style?: CSSProperties }
    ═══════════════════════════════════════════════════════════════════════════ */
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function extractControlIds(sel: any): string[] {
+export function extractControlIds(sel: any): string[] {
   const ids: string[] = [];
   // with-ids: string[] (older / alternate form)
   for (const c of sel["with-ids"] ?? []) {
@@ -149,7 +149,7 @@ function extractControlIds(sel: any): string[] {
    CATALOG CONTROL LOOKUP — find a control in a loaded catalog
    ═══════════════════════════════════════════════════════════════════════════ */
 
-function findCatalogControl(catalog: OscalCatalog, id: string): CatalogControl | undefined {
+export function findCatalogControl(catalog: OscalCatalog, id: string): CatalogControl | undefined {
   function searchGroup(g: CatalogGroup): CatalogControl | undefined {
     for (const c of g.controls ?? []) {
       if (c.id === id) return c;
@@ -172,7 +172,7 @@ function findCatalogControl(catalog: OscalCatalog, id: string): CatalogControl |
   return undefined;
 }
 
-function findParentCatalogControl(catalog: OscalCatalog, enhId: string): CatalogControl | undefined {
+export function findParentCatalogControl(catalog: OscalCatalog, enhId: string): CatalogControl | undefined {
   function searchGroup(g: CatalogGroup): CatalogControl | undefined {
     for (const c of g.controls ?? []) {
       for (const enh of c.controls ?? []) { if (enh.id === enhId) return c; }
@@ -193,13 +193,13 @@ function findParentCatalogControl(catalog: OscalCatalog, enhId: string): Catalog
   return undefined;
 }
 
-function getCatalogLabel(props?: CatalogOscalProp[]): string {
+export function getCatalogLabel(props?: CatalogOscalProp[]): string {
   if (!props) return "";
   const lbl = props.find((p) => p.name === "label" && p.class !== "zero-padded");
   return lbl?.value ?? props.find((p) => p.name === "label")?.value ?? "";
 }
 
-function resolveInlineParams(text: string, paramMap: Record<string, CatalogParam>): string {
+export function resolveInlineParams(text: string, paramMap: Record<string, CatalogParam>): string {
   return text.replace(/\{\{\s*insert:\s*param\s*,\s*([^}]+?)\s*\}\}/g, (_match, id: string) => {
     const param = paramMap[id.trim()];
     if (!param) return `[Assignment: ${id.trim()}]`;
@@ -207,7 +207,7 @@ function resolveInlineParams(text: string, paramMap: Record<string, CatalogParam
   });
 }
 
-function renderParamText(param: CatalogParam, paramMap: Record<string, CatalogParam>): string {
+export function renderParamText(param: CatalogParam, paramMap: Record<string, CatalogParam>): string {
   if (param.select) {
     const howMany = param.select["how-many"];
     const prefix = howMany === "one-or-more" ? "Selection (one or more)" : "Selection";
@@ -301,7 +301,7 @@ function parseAssessmentPlan(raw: any): PlanParsed {
    TASK TREE HELPERS — recursive search within nested tasks
    ═══════════════════════════════════════════════════════════════════════════ */
 
-function findTaskRecursive(tasks: TaskParsed[], uuid: string): TaskParsed | null {
+export function findTaskRecursive(tasks: TaskParsed[], uuid: string): TaskParsed | null {
   for (const t of tasks) {
     if (t.uuid === uuid) return t;
     const found = findTaskRecursive(t.tasks, uuid);
@@ -310,7 +310,7 @@ function findTaskRecursive(tasks: TaskParsed[], uuid: string): TaskParsed | null
   return null;
 }
 
-function findTaskPath(tasks: TaskParsed[], uuid: string): TaskParsed[] | null {
+export function findTaskPath(tasks: TaskParsed[], uuid: string): TaskParsed[] | null {
   for (const t of tasks) {
     if (t.uuid === uuid) return [t];
     const sub = findTaskPath(t.tasks, uuid);
@@ -319,7 +319,7 @@ function findTaskPath(tasks: TaskParsed[], uuid: string): TaskParsed[] | null {
   return null;
 }
 
-function filterTasksRecursive(tasks: TaskParsed[], q: string): TaskParsed[] {
+export function filterTasksRecursive(tasks: TaskParsed[], q: string): TaskParsed[] {
   const result: TaskParsed[] = [];
   for (const t of tasks) {
     const matchesSelf = t.title.toLowerCase().includes(q) || t.type.toLowerCase().includes(q);
@@ -334,7 +334,7 @@ function filterTasksRecursive(tasks: TaskParsed[], q: string): TaskParsed[] {
   return result;
 }
 
-function collectAllActivities(tasks: TaskParsed[]): ActivityParsed[] {
+export function collectAllActivities(tasks: TaskParsed[]): ActivityParsed[] {
   const all: ActivityParsed[] = [];
   for (const t of tasks) {
     all.push(...t.associatedActivities);
@@ -343,7 +343,7 @@ function collectAllActivities(tasks: TaskParsed[]): ActivityParsed[] {
   return all;
 }
 
-function countAllTasks(tasks: TaskParsed[]): number {
+export function countAllTasks(tasks: TaskParsed[]): number {
   let count = tasks.length;
   for (const t of tasks) count += countAllTasks(t.tasks);
   return count;
