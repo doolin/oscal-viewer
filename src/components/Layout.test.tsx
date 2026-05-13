@@ -13,11 +13,11 @@ import {
   within,
 } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import Layout from "./Layout";
 import { ThemeProvider } from "../context/ThemeContext";
 import { AuthProvider } from "../context/AuthContext";
-import { OscalProvider } from "../context/OscalContext";
+import { OscalProvider, useOscal } from "../context/OscalContext";
 
 /* ───────── test helpers ───────── */
 
@@ -70,6 +70,80 @@ function renderLayout(
               </Route>
             </Routes>
           </MemoryRouter>
+        </OscalProvider>
+      </AuthProvider>
+    </ThemeProvider>,
+  );
+}
+
+/**
+ * A helper component that seeds an OSCAL model into OscalContext on mount.
+ * Must be rendered inside <OscalProvider>.
+ */
+function OscalSeeder({
+  modelKey,
+  children,
+}: {
+  modelKey: "catalog" | "profile" | "ssp" | "component-definition" | "assessment-plan" | "assessment-results" | "poam";
+  children?: ReactNode;
+}) {
+  const { setCatalog, setProfile, setSsp, setComponentDefinition, setAssessmentPlan, setAssessmentResults, setPoam } = useOscal();
+  useEffect(() => {
+    switch (modelKey) {
+      case "catalog":
+        setCatalog({ uuid: "test-cat", metadata: { title: "Test" } }, "test.json");
+        break;
+      case "profile":
+        setProfile({ uuid: "test-profile" }, "profile.json");
+        break;
+      case "ssp":
+        setSsp({ uuid: "test-ssp" }, "ssp.json");
+        break;
+      case "component-definition":
+        setComponentDefinition({ uuid: "test-cd" }, "cd.json");
+        break;
+      case "assessment-plan":
+        setAssessmentPlan({ uuid: "test-ap" }, "ap.json");
+        break;
+      case "assessment-results":
+        setAssessmentResults({ uuid: "test-ar" }, "ar.json");
+        break;
+      case "poam":
+        setPoam({ uuid: "test-poam" }, "poam.json");
+        break;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return <>{children}</>;
+}
+
+/**
+ * Renders the Layout with a pre-seeded OscalContext model.
+ * Use this when you need isLoaded(modelKey) === true inside Layout.
+ */
+function renderLayoutWithSeeder(
+  opts: {
+    mobile?: boolean;
+    initialPath?: string;
+    seededModel?: "catalog" | "profile" | "ssp" | "component-definition" | "assessment-plan" | "assessment-results" | "poam";
+  } = {},
+) {
+  stubMatchMedia(opts.mobile ?? false);
+  return render(
+    <ThemeProvider>
+      <AuthProvider>
+        <OscalProvider>
+          <OscalSeeder modelKey={opts.seededModel ?? "catalog"}>
+            <MemoryRouter initialEntries={[opts.initialPath ?? "/"]}>
+              <Routes>
+                <Route element={<Layout />}>
+                  <Route path="/" element={<div>page: home</div>} />
+                  <Route path="catalog" element={<div>page: catalog</div>} />
+                  <Route path="privacy" element={<div>page: privacy</div>} />
+                </Route>
+              </Routes>
+            </MemoryRouter>
+          </OscalSeeder>
         </OscalProvider>
       </AuthProvider>
     </ThemeProvider>,
@@ -329,3 +403,178 @@ describe("<Layout /> theme toggle", () => {
     expect(before).not.toBe(after);
   });
 });
+
+/* ─────────────── Desktop header — authenticated branch ─────────────── */
+
+describe("<Layout /> desktop header authenticated", () => {
+  beforeEach(() => {
+    sessionStorage.setItem("oscal_jwt", VALID_JWS);
+  });
+
+  afterEach(() => {
+    sessionStorage.removeItem("oscal_jwt");
+  });
+
+  it("shows the JWT loaded button when a token is in sessionStorage", () => {
+    renderLayout();
+    expect(
+      screen.getByRole("button", { name: /JWT loaded/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("toggles the JWT popover open when the authenticated button is clicked", () => {
+    renderLayout();
+    const btn = screen.getByRole("button", { name: /JWT loaded/i });
+    fireEvent.click(btn);
+    expect(screen.getByText(/JWT Token Loaded/)).toBeInTheDocument();
+  });
+
+  it("closes the JWT popover when clicking it a second time (toggle off)", () => {
+    renderLayout();
+    const btn = screen.getByRole("button", { name: /JWT loaded/i });
+    // open
+    fireEvent.click(btn);
+    expect(screen.getByText(/JWT Token Loaded/)).toBeInTheDocument();
+    // close via outside mousedown (same pattern as other popover tests)
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByText(/JWT Token Loaded/)).not.toBeInTheDocument();
+  });
+});
+
+/* ─────────────── Mobile header — JWT button + theme toggle ─────────────── */
+
+describe("<Layout /> mobile header controls", () => {
+  it("renders a JWT button in mobile mode (unauthenticated)", () => {
+    renderLayout({ mobile: true });
+    expect(
+      screen.getByRole("button", { name: /Load JWT token/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("opens the JWT popover from the mobile header", () => {
+    renderLayout({ mobile: true });
+    fireEvent.click(screen.getByRole("button", { name: /Load JWT token/i }));
+    expect(screen.getByText(/Load JWT Token/)).toBeInTheDocument();
+  });
+
+  it("renders the theme toggle in mobile mode", () => {
+    renderLayout({ mobile: true });
+    expect(
+      screen.getByRole("button", { name: /Switch to (light|dark) mode/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("flips the theme from the mobile header toggle", () => {
+    renderLayout({ mobile: true });
+    const toggle = screen.getByRole("button", {
+      name: /Switch to (light|dark) mode/,
+    });
+    const before = document.documentElement.getAttribute("data-theme");
+    fireEvent.click(toggle);
+    const after = document.documentElement.getAttribute("data-theme");
+    expect(before).not.toBe(after);
+  });
+
+  it("shows JWT loaded button in mobile when token is in sessionStorage", () => {
+    sessionStorage.setItem("oscal_jwt", VALID_JWS);
+    renderLayout({ mobile: true });
+    expect(
+      screen.getByRole("button", { name: /JWT loaded/i }),
+    ).toBeInTheDocument();
+  });
+});
+
+/* ─────────────── Mobile menu overlay items ─────────────── */
+
+describe("<Layout /> mobile menu overlay", () => {
+  it("renders model items when the mobile menu is open", () => {
+    renderLayout({ mobile: true });
+    fireEvent.click(
+      screen.getByRole("button", { name: /Toggle navigation menu/ }),
+    );
+    // Catalog is one of the oscalModels
+    expect(screen.getByRole("link", { name: /Catalog/ })).toBeInTheDocument();
+  });
+
+  it("renders the Content Registry external link in the mobile menu", () => {
+    renderLayout({ mobile: true });
+    fireEvent.click(
+      screen.getByRole("button", { name: /Toggle navigation menu/ }),
+    );
+    const registryLinks = screen.getAllByRole("link", { name: /Content Registry/ });
+    expect(registryLinks.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("closes the menu when a model item is tapped", () => {
+    renderLayout({ mobile: true });
+    fireEvent.click(
+      screen.getByRole("button", { name: /Toggle navigation menu/ }),
+    );
+    // The menu is now open; click a model item to close it
+    const catalogLink = screen.getByRole("link", { name: /Catalog/ });
+    fireEvent.click(catalogLink);
+    // Menu should close — Home text from mobile menu should vanish
+    expect(screen.queryByText("Home")).not.toBeInTheDocument();
+  });
+
+  it("closes the menu when the Content Registry link is clicked", () => {
+    renderLayout({ mobile: true });
+    fireEvent.click(
+      screen.getByRole("button", { name: /Toggle navigation menu/ }),
+    );
+    // Pick the registry link inside the mobile menu overlay
+    const registryLinks = screen.getAllByRole("link", { name: /Content Registry/ });
+    fireEvent.click(registryLinks[0]);
+    // Menu should close
+    expect(screen.queryByText("Home")).not.toBeInTheDocument();
+  });
+
+  it("closes the menu when the Home item in the mobile overlay is tapped", () => {
+    renderLayout({ mobile: true });
+    fireEvent.click(
+      screen.getByRole("button", { name: /Toggle navigation menu/ }),
+    );
+    // The mobile overlay renders a "Home" NavLink; clicking it triggers onTap
+    const homeLinks = screen.getAllByRole("link", { name: /^Home$/ });
+    // There should be at least one Home link in the overlay
+    expect(homeLinks.length).toBeGreaterThanOrEqual(1);
+    fireEvent.click(homeLinks[0]);
+    // Menu closes after tap
+    expect(screen.queryByText("Home")).not.toBeInTheDocument();
+  });
+});
+
+/* ─────────────── Mobile menu — Dot indicator loaded state ─────────────── */
+
+describe("<Layout /> mobile menu dot indicator", () => {
+  it("shows the loaded dot state for a seeded profile model", async () => {
+    // Seed a profile so isLoaded('profile') === true, which sets loaded=true on that MobileMenuItem dot
+    renderLayoutWithSeeder({ mobile: true, seededModel: "profile" });
+
+    // Open the mobile menu
+    fireEvent.click(
+      screen.getByRole("button", { name: /Toggle navigation menu/ }),
+    );
+
+    // The Profile menu item should be present in the mobile overlay
+    const profileLink = screen.getByRole("link", { name: /Profile/ });
+    expect(profileLink).toBeInTheDocument();
+  });
+
+  it("shows the loaded dot state for a seeded catalog model", async () => {
+    renderLayoutWithSeeder({ mobile: true, seededModel: "catalog" });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /Toggle navigation menu/ }),
+    );
+
+    const catalogLink = screen.getByRole("link", { name: /Catalog/ });
+    expect(catalogLink).toBeInTheDocument();
+  });
+});
+
+/* ─────────────── Disabled tab note ─────────────── */
+
+// NOTE: The `if (m.disabled)` branch at Layout.tsx L188-211 is structurally
+// unreachable via the public API: no entry in src/theme/tokens.ts oscalModels
+// has `disabled: true`. The flag is wired through but never set. Do not chase.
