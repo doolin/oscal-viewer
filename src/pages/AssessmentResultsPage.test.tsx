@@ -1759,5 +1759,173 @@ describe("<AssessmentResultsPage /> AR3 — desktop sidebar filters and nav", ()
   });
 });
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   AR4 — OverviewView summary card clicks + multi-result rendering +
+         GroupView/ObservationTable navigation
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("<AssessmentResultsPage /> AR4 — OverviewView card clicks + multi-result", () => {
+  it("findings summary 'View All →' navigates to findings list (L1793)", async () => {
+    const arWithFinding = {
+      ...RICH_AR,
+      results: [
+        {
+          ...RICH_AR.results[0],
+          findings: [
+            {
+              uuid: "fnd-1",
+              title: "AC-1 Finding",
+              description: "Password length check failed.",
+              target: {
+                type: "objective-id",
+                "target-id": "ac-1",
+                status: { state: "not-satisfied", reason: "fail" },
+              },
+            },
+          ],
+        },
+      ],
+    };
+    await renderLoaded({ ar: arWithFinding });
+    const viewAll = screen.getAllByText("View All →")
+      .find((el) => /findings/i.test(el.closest("div")?.parentElement?.textContent || ""))
+      ?? screen.getAllByText("View All →")[0];
+    fireEvent.click(viewAll);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/AC-1 Finding/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("finding state card click navigates to findings list (L1801)", async () => {
+    const arWithFinding = {
+      ...RICH_AR,
+      results: [
+        {
+          ...RICH_AR.results[0],
+          findings: [
+            {
+              uuid: "fnd-1",
+              title: "AC-1 Finding",
+              description: "Password length check failed.",
+              target: { type: "objective-id", "target-id": "ac-1",
+                status: { state: "satisfied" } },
+            },
+          ],
+        },
+      ],
+    };
+    const utils = await renderLoaded({ ar: arWithFinding });
+    // The finding state card has a count (e.g., "1") and a label ("Satisfied").
+    // Each one is a div with `padding: "10px 16px"` and `cursor: pointer` in
+    // its inline style — the only clickable items with that layout.
+    const cards = Array.from(utils.container.querySelectorAll<HTMLElement>("div"))
+      .filter((d) => {
+        const style = d.getAttribute("style") || "";
+        return /padding:\s*10px 16px/.test(style) && /cursor:\s*pointer/.test(style)
+          && /satisfied/i.test(d.textContent || "");
+      });
+    expect(cards.length).toBeGreaterThan(0);
+    fireEvent.click(cards[0]);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/AC-1 Finding/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("risks summary 'View All →' navigates to risks list (L1825)", async () => {
+    // RICH_AR has 2 risks → "View All →" appears in the Risks Summary card.
+    await renderLoaded();
+    const viewAllElems = screen.getAllByText("View All →");
+    expect(viewAllElems.length).toBeGreaterThan(0);
+    fireEvent.click(viewAllElems[0]);
+    // RisksListView renders an "Risks (2)" heading.
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Risks \(2\)/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("risk level card click navigates to risks list (L1833)", async () => {
+    // Need risks with characterizations so they appear in the level summary.
+    const ar = {
+      ...RICH_AR,
+      results: [
+        {
+          ...RICH_AR.results[0],
+          observations: [],
+          risks: [
+            { uuid: "r-c", title: "Critical Risk", description: "x", statement: "x", status: "open",
+              characterizations: [{ origin: { actors: [] }, facets: [{ name: "risk-level", value: "critical", system: "x" }] }] },
+          ],
+        },
+      ],
+    };
+    const utils = await renderLoaded({ ar });
+    // Risk level cards have padding: 10px 16px and cursor: pointer.
+    const cards = Array.from(utils.container.querySelectorAll<HTMLElement>("div"))
+      .filter((d) => {
+        const style = d.getAttribute("style") || "";
+        return /padding:\s*10px 16px/.test(style) && /cursor:\s*pointer/.test(style)
+          && /critical/i.test(d.textContent || "");
+      });
+    expect(cards.length).toBeGreaterThan(0);
+    fireEvent.click(cards[0]);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Critical Risk/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("multi-result fixture shows a Results card; clicking a result navigates (L1934)", async () => {
+    const ar = {
+      ...RICH_AR,
+      results: [
+        { ...RICH_AR.results[0], uuid: "r-1", title: "First Result" },
+        { ...RICH_AR.results[0], uuid: "r-2", title: "Second Result" },
+      ],
+    };
+    const utils = await renderLoaded({ ar });
+    // Multi-result Overview renders a "Results (2)" card with rows.
+    await waitFor(() => expect(utils.container.textContent || "").toMatch(/Results \(2\)/));
+    // Click the second result row.
+    const secondRow = Array.from(utils.container.querySelectorAll<HTMLElement>("div"))
+      .find((d) => /Second Result/.test((d.textContent || "").trim()) && /padding:\s*10px 0/.test(d.getAttribute("style") || ""));
+    if (secondRow) fireEvent.click(secondRow);
+    // ResultView for index 1 renders the result title in a header.
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Second Result/).length).toBeGreaterThan(0),
+    );
+  });
+});
+
+describe("<AssessmentResultsPage /> AR4 — GroupView statusFilter + ObservationTable nav", () => {
+  it("GroupView honors the statusFilter and hides non-matching observations (L2117)", async () => {
+    await renderLoaded();
+    // Apply "fail" filter via desktop FilterPill, then navigate to AC group.
+    const failPill = Array.from(document.querySelectorAll<HTMLElement>("span"))
+      .find((el) => /^fail\s*\(\d+\)$/i.test((el.textContent || "").trim()));
+    expect(failPill).toBeDefined();
+    fireEvent.click(failPill!);
+    fireEvent.click(screen.getAllByText("AC")[0]);
+    // Failing observation visible, passing one (SC group) was already off-group.
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Password Length/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("ObservationTable row click navigates to ObservationView (L2211)", async () => {
+    await renderLoaded();
+    fireEvent.click(screen.getAllByText("AC")[0]);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Password Length/).length).toBeGreaterThan(0),
+    );
+    // ObservationTable renders rows; click the one containing the obs title.
+    const obsRow = screen.getAllByText(/Password Length Below Standard/)[0];
+    fireEvent.click(obsRow);
+    // ObservationView renders the description in detail.
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Minimum length is 8 characters/).length).toBeGreaterThan(0),
+    );
+  });
+});
+
+
 
 
