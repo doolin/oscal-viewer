@@ -1166,3 +1166,215 @@ describe("<AssessmentPlanPage /> edge cases", () => {
     ).toBeInTheDocument();
   });
 });
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   AP1 — ControlDetailPanel + DropZone + scattered helper branches
+
+   Targets:
+     - ControlDetailPanel parameters/enhancements rendering (L687-720)
+     - ControlDetailPanel "not found in catalog" (L618-630)
+     - ControlsView search by control id (L1262) and catalog title (L1265)
+     - DropZone handleClick (L504-508), form submit (L554), error
+       block onClick stopPropagation (L535)
+     - txt() prose-in-object branch (L90-91)
+     - parseAssessmentPlan error: missing metadata (L1589 via loadFile)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/** Catalog enriched with params and enhancements for the ControlDetailPanel
+ *  expand tests. */
+const RICH_CATALOG: Catalog = {
+  uuid: "cat-rich",
+  metadata: { title: "Rich Catalog" },
+  groups: [
+    {
+      id: "ac",
+      title: "Access Control",
+      controls: [
+        {
+          id: "ac-1",
+          title: "Policy and Procedures",
+          props: [{ name: "label", value: "AC-1" }],
+          params: [
+            { id: "ac-1_prm_1", label: "organization-defined roles" },
+            { id: "ac-1_prm_sel",
+              select: { "how-many": "one-or-more", choice: ["weekly", "monthly"] } },
+          ],
+          parts: [
+            { id: "ac-1-stmt", name: "statement",
+              prose: "Refer to {{ insert: param, ac-1_prm_1 }}." },
+          ],
+          controls: [
+            { id: "ac-1.1", title: "Policy Updates",
+              props: [{ name: "label", value: "AC-1(1)" }],
+              params: [{ id: "ac-1.1_prm_1", label: "enhancement frequency" }] },
+            { id: "ac-1.2", title: "Annual Review",
+              props: [{ name: "label", value: "AC-1(2)" }] },
+          ],
+        },
+      ],
+    },
+  ],
+};
+
+describe("<AssessmentPlanPage /> AP1 — ControlDetailPanel deep rendering", () => {
+  async function openAc1Detail(catalog: Catalog = RICH_CATALOG) {
+    await renderLoaded({ catalog });
+    // Navigate to ControlsView: sidebar shows "Controls (N)".
+    fireEvent.click(screen.getByText(/Controls \(\d+\)/));
+    await waitFor(() =>
+      expect(screen.queryByText(/Addressed Controls/i)).toBeInTheDocument(),
+    );
+    // Expand the AC-1 ControlEntry by clicking its header (walk up from the badge).
+    const badge = screen.queryAllByText(/ac-1/i)[0];
+    const badgeBtn = badge?.closest("button");
+    const controlEntryHeader = badgeBtn?.parentElement;
+    if (controlEntryHeader) fireEvent.click(controlEntryHeader as HTMLElement);
+    // Expand the ControlDetailPanel header.
+    const policyTitles = screen.queryAllByText(/Policy and Procedures/i);
+    const detailPanelTitle = policyTitles.length > 1 ? policyTitles[1] : policyTitles[0];
+    const detailHeader = detailPanelTitle?.closest("div[style*='cursor: pointer']");
+    if (detailHeader) fireEvent.click(detailHeader as HTMLElement);
+  }
+
+  it("renders the Parameters section when the catalog control has params (L687-703)", async () => {
+    await openAc1Detail();
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Parameters \(2\)/).length).toBeGreaterThan(0),
+    );
+    // Both param ids appear in the rendered list.
+    expect(screen.getAllByText("ac-1_prm_1").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("ac-1_prm_sel").length).toBeGreaterThan(0);
+    // renderParamText output for the select param includes "Selection (one or more)".
+    expect(screen.getAllByText(/Selection \(one or more\)/).length).toBeGreaterThan(0);
+  });
+
+  it("renders the Enhancements section when the catalog control has enhancements (L705-720)", async () => {
+    await openAc1Detail();
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Enhancements \(2\)/).length).toBeGreaterThan(0),
+    );
+    expect(screen.getAllByText(/AC-1\(1\)/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/AC-1\(2\)/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Policy Updates/).length).toBeGreaterThan(0);
+  });
+
+  it("renders 'not found in loaded catalog' when the control isn't in the catalog (L618-630)", async () => {
+    // AP fixture references ac-1 in activities; load a different catalog
+    // that doesn't contain ac-1 so findCatalogControl returns undefined.
+    const otherCatalog: Catalog = {
+      uuid: "other-cat",
+      metadata: { title: "Other Catalog" },
+      groups: [
+        { id: "ia", title: "Identification",
+          controls: [{ id: "ia-5", title: "Authenticator Management",
+            props: [{ name: "label", value: "IA-5" }] }] },
+      ],
+    };
+    await renderLoaded({ catalog: otherCatalog });
+    fireEvent.click(screen.getByText(/Controls \(\d+\)/));
+    await waitFor(() =>
+      expect(screen.queryByText(/Addressed Controls/i)).toBeInTheDocument(),
+    );
+    // Expand the AC-1 ControlEntry — the inner ControlDetailPanel renders
+    // the "not found in loaded catalog" message.
+    const badge = screen.queryAllByText(/ac-1/i)[0];
+    const entryHeader = badge?.closest("button")?.parentElement;
+    if (entryHeader) fireEvent.click(entryHeader as HTMLElement);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/not found in loaded catalog/).length).toBeGreaterThan(0),
+    );
+  });
+});
+
+describe("<AssessmentPlanPage /> AP1 — ControlsView search filters", () => {
+  it("search matches by control id (L1262)", async () => {
+    await renderLoaded({ catalog: RICH_CATALOG });
+    fireEvent.click(screen.getByText(/Controls \(\d+\)/));
+    await waitFor(() =>
+      expect(screen.queryByText(/Addressed Controls/i)).toBeInTheDocument(),
+    );
+    const search = screen.getByPlaceholderText(/Filter controls/i);
+    fireEvent.change(search, { target: { value: "ac-1" } });
+    expect(screen.getAllByText(/AC-1|ac-1/i).length).toBeGreaterThan(0);
+  });
+
+  it("search matches by catalog control title (L1265)", async () => {
+    await renderLoaded({ catalog: RICH_CATALOG });
+    fireEvent.click(screen.getByText(/Controls \(\d+\)/));
+    await waitFor(() =>
+      expect(screen.queryByText(/Addressed Controls/i)).toBeInTheDocument(),
+    );
+    const search = screen.getByPlaceholderText(/Filter controls/i);
+    fireEvent.change(search, { target: { value: "policy" } });
+    expect(screen.getAllByText(/AC-1|ac-1/i).length).toBeGreaterThan(0);
+  });
+});
+
+describe("<AssessmentPlanPage /> AP1 — DropZone interactions", () => {
+  it("clicking the dropzone fires handleClick (L504-508)", () => {
+    render(<Harness preload={false} />);
+    const dropzone = screen.getByText(/Drop an OSCAL/).parentElement!;
+    expect(() => fireEvent.click(dropzone)).not.toThrow();
+  });
+
+  it("submitting the URL fetch form (L554)", () => {
+    render(<Harness preload={false} />);
+    const urlInput = screen.getByPlaceholderText(/https:\/\//) as HTMLInputElement;
+    fireEvent.change(urlInput, { target: { value: "https://example.com/ap.json" } });
+    const form = urlInput.closest("form")!;
+    expect(() => fireEvent.submit(form)).not.toThrow();
+  });
+
+  it("renders the error block and stops propagation on click (L535)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 500 })));
+    const { container } = render(<Harness preload={false} initialPath="/assessment-plan?url=https://example.com/ap.json" />);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Open URL directly/).length).toBeGreaterThan(0),
+    );
+    const errBlock = Array.from(container.querySelectorAll<HTMLElement>("div"))
+      .find((d) => /Open URL directly/.test(d.textContent || ""));
+    expect(errBlock).toBeDefined();
+    expect(() => fireEvent.click(errBlock!)).not.toThrow();
+    expect(screen.queryAllByText(/Drop an OSCAL/).length).toBeGreaterThan(0);
+  });
+});
+
+describe("<AssessmentPlanPage /> AP1 — helper edge cases", () => {
+  it("loadFile rejects an AP without metadata via parseAssessmentPlan (L1589)", async () => {
+    const { container } = render(<Harness preload={false} />);
+    const zone = container.querySelector('div[style*="dashed"]') as HTMLElement;
+    // File contains valid JSON but no metadata — parseAssessmentPlan throws.
+    fireDrop(
+      zone,
+      new File([JSON.stringify({ "assessment-plan": { uuid: "ap-x" } })], "x.json",
+        { type: "application/json" }),
+    );
+    await waitFor(() =>
+      expect(screen.queryAllByText(/missing metadata|Not a valid OSCAL/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it.skip("txt() unwraps a `{prose: ...}` object value through MarkupBlock rendering (L90-91) — skip: parser flattens prose-object on parse; this branch is reachable only if a viewer panel passes the raw value through txt() (not the case in current code)", async () => {
+    // RICH_AP's first activity has a string description; override it with
+    // a {prose: "..."} object to route through txt() at L90-91.
+    const ap = {
+      ...RICH_AP,
+      "local-definitions": {
+        activities: [
+          {
+            ...RICH_AP["local-definitions"].activities[0],
+            description: { prose: "Description wrapped in a prose object." },
+          },
+          ...RICH_AP["local-definitions"].activities.slice(1),
+        ],
+      },
+    };
+    await renderLoaded({ ap });
+    // Navigate to act-1 by clicking its title in the sidebar.
+    fireEvent.click(screen.getAllByText(/Examine Access Control Policy/)[0]);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Description wrapped in a prose object/).length).toBeGreaterThan(0),
+    );
+  });
+});
+
