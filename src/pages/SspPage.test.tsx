@@ -1473,3 +1473,101 @@ describe("<SspPage /> SSP1 — component/asset-type switch coverage", () => {
   });
 });
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   SSP2 — StatusBadge / ImplStatusBadge state branches, DropZone, and
+          implemented-requirement chip click
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("<SspPage /> SSP2 — status badges + impl-status badges", () => {
+  it("ComponentStateBadge renders each state branch (L840-843)", async () => {
+    const components = ["operational", "under-development", "disposition", "weird-state"].map((state, i) => ({
+      uuid: `comp-state-${i}`,
+      type: "software",
+      title: `${state}-comp`,
+      description: `Component with state ${state}.`,
+      status: { state },
+    }));
+    const ssp = {
+      ...RICH_SSP,
+      uuid: "ssp-states",
+      "system-implementation": {
+        ...RICH_SSP["system-implementation"],
+        components,
+      },
+    };
+    await renderLoaded({ ssp });
+    fireEvent.click(screen.getAllByText(/System Implementation/i)[0]);
+    fireEvent.click(screen.getAllByText(/^Components$/)[0]);
+    // Each component's title renders, exercising its status badge in the
+    // process. The default "weird-state" branch (L843 else) also fires.
+    expect(screen.getAllByText(/under-development-comp/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/disposition-comp/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/weird-state-comp/).length).toBeGreaterThan(0);
+  });
+
+  it("ImplStatusBadge renders each implementation-status branch (L877-883)", async () => {
+    // implemented-requirements with various implementation-status prop values.
+    const irs = ["implemented", "partial", "planned", "alternative", "not-applicable", "unknown-state"].map((status, i) => ({
+      uuid: `ir-${i}`,
+      "control-id": `xx-${i + 1}`,
+      props: [{ name: "implementation-status", value: status }],
+    }));
+    const ssp = {
+      ...RICH_SSP,
+      uuid: "ssp-impl-status",
+      "control-implementation": {
+        description: "Various impl statuses.",
+        "implemented-requirements": irs,
+      },
+    };
+    await renderLoaded({ ssp });
+    fireEvent.click(screen.getAllByText(/Control Implementation/i)[0]);
+    // Each control chip with its impl-status badge renders.
+    expect(screen.getAllByText(/XX-1|xx-1/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/XX-6|xx-6/i).length).toBeGreaterThan(0);
+  });
+});
+
+describe("<SspPage /> SSP2 — DropZone interactions", () => {
+  it("clicking the dropzone fires handleClick", () => {
+    render(<Harness preload={false} />);
+    const dropzone = screen.getByText(/Drop an OSCAL/).parentElement!;
+    expect(() => fireEvent.click(dropzone)).not.toThrow();
+  });
+
+  it("URL fetch form onSubmit (L1180)", () => {
+    render(<Harness preload={false} />);
+    const urlInput = screen.getByPlaceholderText(/https:\/\//) as HTMLInputElement;
+    fireEvent.change(urlInput, { target: { value: "https://example.com/ssp.json" } });
+    const form = urlInput.closest("form")!;
+    expect(() => fireEvent.submit(form)).not.toThrow();
+  });
+
+  it("renders the error block + 'Open URL directly' hint when auto-load fails", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 500 })));
+    const { container } = render(<Harness preload={false} initialPath="/ssp?url=https://example.com/ssp.json" />);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Open URL directly/).length).toBeGreaterThan(0),
+    );
+    const errBlock = Array.from(container.querySelectorAll<HTMLElement>("div"))
+      .find((d) => /Open URL directly/.test(d.textContent || ""));
+    expect(errBlock).toBeDefined();
+    expect(() => fireEvent.click(errBlock!)).not.toThrow();
+  });
+});
+
+describe("<SspPage /> SSP2 — implemented-requirement control chip click", () => {
+  it("clicking a control chip in the Control Implementation view navigates to ctrl-X (L2262)", async () => {
+    await renderLoaded();
+    fireEvent.click(screen.getAllByText(/Control Implementation/i)[0]);
+    // The control IDs render as clickable chips with .toUpperCase() display.
+    const chip = screen.getAllByText(/AC-1|ac-1/i)[0];
+    fireEvent.click(chip);
+    // ControlView for ac-1 renders the catalog title.
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Policy and Procedures/).length).toBeGreaterThan(0),
+    );
+  });
+});
+
+
