@@ -1926,6 +1926,87 @@ describe("<AssessmentResultsPage /> AR4 — GroupView statusFilter + Observation
   });
 });
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   AR5 — ObservationView (no catalog) + RisksListView click +
+         FindingDetailView related-risk navigation
+
+   The big "catalog enrichment" block (CatalogPartTree L2396,
+   CatalogProseWithParams L2431, CollapsibleSection L2475,
+   getAllCatalogControls L2496) is **STRUCTURALLY DEAD** — all four
+   functions are marked `@ts-ignore: reserved for future catalog
+   enrichment` and never called from any rendering code in
+   AssessmentResultsPage. They're refactor candidates (delete-able),
+   not coverage targets.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("<AssessmentResultsPage /> AR5 — observation/finding/risk detail navigation", () => {
+  it("CatalogContextCard renders the 'Catalog Not Loaded' branch when no catalog is loaded (L2358-2371)", async () => {
+    await renderLoaded({ withCatalog: false });
+    // Navigate into the AC group, then into the observation.
+    fireEvent.click(screen.getAllByText("AC")[0]);
+    fireEvent.click(screen.getAllByText(/Password Length Below Standard/)[0]);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Catalog Not Loaded/).length).toBeGreaterThan(0),
+    );
+    expect(screen.getAllByText(/Upload an OSCAL Catalog/).length).toBeGreaterThan(0);
+  });
+
+  it("RisksListView row click navigates to risk detail (L2920)", async () => {
+    await renderLoaded();
+    fireEvent.click(screen.getAllByText("Risks")[0]);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Weak Credential Policy Risk/).length).toBeGreaterThan(0),
+    );
+    const riskRow = screen.getAllByText(/Weak Credential Policy Risk/)[0];
+    fireEvent.click(riskRow);
+    // RiskDetailView renders the description.
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Current policy allows short passwords/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("FindingDetailView related-risks row click navigates to risk detail (L2822)", async () => {
+    const arWithRelatedRisks = {
+      ...RICH_AR,
+      results: [
+        {
+          ...RICH_AR.results[0],
+          findings: [
+            {
+              uuid: "fnd-1",
+              title: "Linked Finding",
+              description: "Touches risk-1.",
+              target: { type: "objective-id", "target-id": "ac-1",
+                status: { state: "not-satisfied", reason: "fail" } },
+              "associated-risks": [{ "risk-uuid": "risk-1" }],
+              "related-observations": [{ "observation-uuid": "obs-1" }],
+            },
+          ],
+        },
+      ],
+    };
+    await renderLoaded({ ar: arWithRelatedRisks });
+    // Open the Findings list, then the finding detail.
+    const findingsNav = screen.getAllByText(/Findings \(1\)/)[0];
+    fireEvent.click(findingsNav);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Linked Finding/).length).toBeGreaterThan(0),
+    );
+    fireEvent.click(screen.getAllByText(/Linked Finding/)[0]);
+    // FindingDetailView lists related risks; click the related-risk row.
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Weak Credential Policy Risk/).length).toBeGreaterThan(0),
+    );
+    const relatedRiskRow = screen.getAllByText(/Weak Credential Policy Risk/)[0];
+    fireEvent.click(relatedRiskRow);
+    // RiskDetailView shows the risk's description.
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Current policy allows short passwords/).length).toBeGreaterThan(0),
+    );
+  });
+});
+
+
 
 
 
