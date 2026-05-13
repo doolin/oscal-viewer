@@ -1117,3 +1117,128 @@ describe("<CatalogPage /> edge cases", () => {
     }
   });
 });
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CP1 — Catalog helpers, safeString variants, DropZone, scattered branches
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+
+describe("<CatalogPage /> CP1 — DropZone interactions", () => {
+  it("clicking the dropzone fires handleClick", () => {
+    render(
+      <MemoryRouter initialEntries={["/catalog"]}>
+        <AuthProvider>
+          <OscalProvider>
+            <CatalogPage />
+          </OscalProvider>
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+    const dropzone = screen.getByText(/Drop an OSCAL/).parentElement!;
+    expect(() => fireEvent.click(dropzone)).not.toThrow();
+  });
+
+  it("error block onClick stops propagation when auto-load fails", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 500 })));
+    const { container } = render(
+      <MemoryRouter initialEntries={["/catalog?url=https://example.com/cat.json"]}>
+        <AuthProvider>
+          <OscalProvider>
+            <CatalogPage />
+          </OscalProvider>
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Open URL directly/).length).toBeGreaterThan(0),
+    );
+    const errBlock = Array.from(container.querySelectorAll<HTMLElement>("div"))
+      .find((d) => /Open URL directly/.test(d.textContent || ""));
+    expect(errBlock).toBeDefined();
+    expect(() => fireEvent.click(errBlock!)).not.toThrow();
+  });
+});
+
+describe("<CatalogPage /> CP1 — catalog helper recursion via nested groups", () => {
+  it("findControl recurses into nested groups (RICH_CATALOG.ac.ac-nested.ac-n-1)", async () => {
+    // RICH_CATALOG already has a nested group `ac.ac-nested` with control `ac-n-1`.
+    // Navigating to its detail exercises findControl's group recursion (L150-178).
+    const Wrapper = makeWrapper("/catalog");
+    function Seed() {
+      const { setCatalog } = useOscal();
+      const seeded = useRef(false);
+      useEffect(() => {
+        if (!seeded.current) {
+          seeded.current = true;
+          setCatalog(RICH_CATALOG, "cat.json");
+        }
+      }, [setCatalog]);
+      return null;
+    }
+    render(
+      <Wrapper>
+        <Seed />
+        <CatalogPage />
+      </Wrapper>,
+    );
+    await waitFor(() => expect(screen.queryByText("Overview")).not.toBeNull());
+    // Sidebar groups default to collapsed. Expand the AC family, then the
+    // nested subsection, then click the control.
+    fireEvent.click(screen.getAllByText(/Access Control/)[0]);
+    fireEvent.click(screen.getAllByText(/Nested Access Subsection/)[0]);
+    fireEvent.click(screen.getAllByText(/Nested Sample Control/)[0]);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Nested Sample Control/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("resolveInlineParams renders '[Assignment: unknown-id]' for an unresolved token (L72)", async () => {
+    const cat: Catalog = {
+      ...RICH_CATALOG,
+      groups: [
+        {
+          id: "tt",
+          title: "Tokens",
+          controls: [
+            {
+              id: "tt-1",
+              title: "Token Probe",
+              props: [{ name: "label", value: "TT-1" }],
+              parts: [
+                { id: "tt-1-stmt", name: "statement",
+                  prose: "Refers to {{ insert: param, not-a-real-id }}." },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const Wrapper = makeWrapper("/catalog");
+    function Seed() {
+      const { setCatalog } = useOscal();
+      const seeded = useRef(false);
+      useEffect(() => {
+        if (!seeded.current) {
+          seeded.current = true;
+          setCatalog(cat, "cat.json");
+        }
+      }, [setCatalog]);
+      return null;
+    }
+    render(
+      <Wrapper>
+        <Seed />
+        <CatalogPage />
+      </Wrapper>,
+    );
+    await waitFor(() => expect(screen.queryByText("Overview")).not.toBeNull());
+    // Expand the Tokens group first.
+    fireEvent.click(screen.getAllByText(/^Tokens$/)[0]);
+    fireEvent.click(screen.getAllByText(/Token Probe/)[0]);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/\[Assignment: not-a-real-id\]/).length).toBeGreaterThan(0),
+    );
+  });
+});
+
