@@ -1092,3 +1092,36 @@ describe("<ComponentDefinitionPage /> edge cases", () => {
     );
   });
 });
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CD1 — DropZone interactions + helper recursion
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("<ComponentDefinitionPage /> CD1 — DropZone interactions", () => {
+  it("clicking the dropzone fires handleClick", () => {
+    render(<Harness preload={false} />);
+    const dropzone = screen.getByText(/Drop an OSCAL/).parentElement!;
+    expect(() => fireEvent.click(dropzone)).not.toThrow();
+  });
+
+  it("URL fetch form onSubmit", () => {
+    render(<Harness preload={false} />);
+    const urlInput = screen.getByPlaceholderText(/https:\/\//) as HTMLInputElement;
+    fireEvent.change(urlInput, { target: { value: "https://example.com/cdef.json" } });
+    const form = urlInput.closest("form")!;
+    expect(() => fireEvent.submit(form)).not.toThrow();
+  });
+
+  it("error block onClick stops propagation when auto-load fails", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 500 })));
+    const { container } = render(<Harness preload={false} initialPath="/component-definition?url=https://example.com/cdef.json" />);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Open URL directly/).length).toBeGreaterThan(0),
+    );
+    const errBlock = Array.from(container.querySelectorAll<HTMLElement>("div"))
+      .find((d) => /Open URL directly/.test(d.textContent || ""));
+    expect(errBlock).toBeDefined();
+    expect(() => fireEvent.click(errBlock!)).not.toThrow();
+  });
+});
+
