@@ -50,7 +50,7 @@ const PART_SECTIONS: { name: string; label: string; icon: string; color: string 
  * Selection  → [Selection: choice1; choice2]  or  [Selection (one or more): ...]
  * Assignment → [Assignment: <label>]  or  [Assignment: <id>]
  */
-function renderParamText(param: Param, paramMap: Record<string, Param>): string {
+export function renderParamText(param: Param, paramMap: Record<string, Param>): string {
   if (param.select) {
     const howMany = param.select["how-many"];
     const prefix = howMany === "one-or-more" ? "Selection (one or more)" : "Selection";
@@ -65,7 +65,7 @@ function renderParamText(param: Param, paramMap: Record<string, Param>): string 
  * Replace all {{ insert: param, <id> }} tokens in a string with
  * the rendered form of the referenced parameter.
  */
-function resolveInlineParams(text: string, paramMap: Record<string, Param>): string {
+export function resolveInlineParams(text: string, paramMap: Record<string, Param>): string {
   // Pattern: {{ insert: param, <param-id> }}
   return text.replace(/\{\{\s*insert:\s*param\s*,\s*([^}]+?)\s*\}\}/g, (_match, id: string) => {
     const param = paramMap[id.trim()];
@@ -77,7 +77,7 @@ function resolveInlineParams(text: string, paramMap: Record<string, Param>): str
 /** Safely convert any value to a renderable string. OSCAL documents may
  *  occasionally carry structured objects (e.g. {low, moderate}) where a
  *  plain string is expected; guard against React error #31. */
-function safeString(v: unknown): string {
+export function safeString(v: unknown): string {
   if (v === null || v === undefined) return "";
   if (typeof v === "string") return v;
   if (typeof v === "number" || typeof v === "boolean") return String(v);
@@ -90,7 +90,7 @@ function safeString(v: unknown): string {
   return String(v);
 }
 
-function fmtDate(s?: string) {
+export function fmtDate(s?: string) {
   if (!s) return "—";
   try {
     return new Date(s).toLocaleDateString("en-US", {
@@ -103,12 +103,12 @@ function fmtDate(s?: string) {
   }
 }
 
-function trunc(s: string, n: number) {
+export function trunc(s: string, n: number) {
   return s.length > n ? s.slice(0, n) + "\u2026" : s;
 }
 
 /** Get the label prop from a control/group */
-function getLabel(props?: OscalProp[]): string {
+export function getLabel(props?: OscalProp[]): string {
   if (!props) return "";
   // prefer the non-zero-padded label
   const lbl = props.find((p) => p.name === "label" && p.class !== "zero-padded");
@@ -116,7 +116,7 @@ function getLabel(props?: OscalProp[]): string {
 }
 
 /** Count all controls (including enhancements) under a group recursively */
-function countControls(group: Group): number {
+export function countControls(group: Group): number {
   let count = 0;
   (group.controls ?? []).forEach((c) => {
     count += 1;
@@ -129,7 +129,7 @@ function countControls(group: Group): number {
 }
 
 /** Flatten all controls in the catalog for searching / counting */
-function allControlsFlat(catalog: Catalog): Control[] {
+export function allControlsFlat(catalog: Catalog): Control[] {
   const result: Control[] = [];
   function walkGroup(g: Group) {
     (g.controls ?? []).forEach((c) => {
@@ -147,7 +147,7 @@ function allControlsFlat(catalog: Catalog): Control[] {
 }
 
 /** Find a control by id anywhere in the catalog */
-function findControl(catalog: Catalog, id: string): Control | undefined {
+export function findControl(catalog: Catalog, id: string): Control | undefined {
   function searchGroup(g: Group): Control | undefined {
     for (const c of g.controls ?? []) {
       if (c.id === id) return c;
@@ -175,7 +175,7 @@ function findControl(catalog: Catalog, id: string): Control | undefined {
 }
 
 /** Find the group a control belongs to */
-function findControlGroup(catalog: Catalog, controlId: string): Group | undefined {
+export function findControlGroup(catalog: Catalog, controlId: string): Group | undefined {
   function searchGroup(g: Group): Group | undefined {
     for (const c of g.controls ?? []) {
       if (c.id === controlId) return g;
@@ -197,7 +197,7 @@ function findControlGroup(catalog: Catalog, controlId: string): Group | undefine
 }
 
 /** Find the parent control of an enhancement */
-function findParentControl(catalog: Catalog, enhId: string): Control | undefined {
+export function findParentControl(catalog: Catalog, enhId: string): Control | undefined {
   function searchGroup(g: Group): Control | undefined {
     for (const c of g.controls ?? []) {
       for (const enh of c.controls ?? []) {
@@ -943,7 +943,7 @@ function ViewRouter({ view, catalog, navigate }: {
   return <NotFoundView navigate={navigate} />;
 }
 
-function findGroupById(catalog: Catalog, id: string): Group | undefined {
+export function findGroupById(catalog: Catalog, id: string): Group | undefined {
   function search(groups: Group[]): Group | undefined {
     for (const g of groups) {
       if (g.id === id) return g;
