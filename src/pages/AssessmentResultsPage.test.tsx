@@ -1419,3 +1419,120 @@ describe("<AssessmentResultsPage /> loaded — mobile", () => {
     }
   });
 });
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   AR1 — Helpers: risk severity sort, sort-key fallback, NIST extraction
+
+   Targets:
+     - riskSeveritySortKey switch cases (L333-338) — critical / high /
+       low / unknown branches (moderate is the only level the existing
+       fixture exercises via the level prop, but getRiskLevel actually
+       reads characterizations.facets, so all existing risks come back
+       as "unknown")
+     - getSortKey title-match branch (L298-299): observation title that
+       matches the MS.X.Y.Z pattern
+
+   Dead branches documented (not chased — refactor candidates):
+     - L237, L252 fmtDate / fmtDateTime catch arms — jsdom's Date
+       methods don't throw on invalid input
+     - findCatalogControl (L344-370) and buildCatalogParamMap (L373-396)
+       — explicitly `@ts-ignore: reserved for future catalog enrichment`,
+       never called from rendering code
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("<AssessmentResultsPage /> AR1 — risk severity sort + sort key", () => {
+  function arWithRisks(risks: any[]): any {
+    return {
+      ...RICH_AR,
+      results: [
+        {
+          ...RICH_AR.results[0],
+          observations: [],
+          risks,
+        },
+      ],
+    };
+  }
+
+  /** Read the visible risk titles in DOM order from the RisksListView. */
+  function readRiskOrder(container: HTMLElement): string[] {
+    return Array.from(container.querySelectorAll<HTMLElement>("div"))
+      .map((d) => d.textContent || "")
+      .filter((t) => /Risk-[A-Z]+/.test(t))
+      .map((t) => (t.match(/Risk-[A-Z]+/) ?? [""])[0])
+      .filter((t, i, arr) => arr.indexOf(t) === i);
+  }
+
+  it("riskSeveritySortKey orders risks: critical → high → moderate → low → unknown", async () => {
+    const risks = [
+      // Intentionally out-of-order: order should be re-imposed by the sort.
+      { uuid: "r-u", title: "Risk-UNKNOWN", description: "no characterizations", statement: "...", status: "open" },
+      { uuid: "r-l", title: "Risk-LOW", description: "low", statement: "...", status: "open",
+        characterizations: [{ origin: { actors: [] }, facets: [{ name: "risk", value: "low", system: "x" }] }] },
+      { uuid: "r-c", title: "Risk-CRITICAL", description: "critical", statement: "...", status: "open",
+        characterizations: [{ origin: { actors: [] }, facets: [{ name: "risk-level", value: "Critical", system: "x" }] }] },
+      { uuid: "r-m", title: "Risk-MODERATE", description: "moderate", statement: "...", status: "open",
+        characterizations: [{ origin: { actors: [] }, facets: [{ name: "risk", value: "moderate", system: "x" }] }] },
+      { uuid: "r-h", title: "Risk-HIGH", description: "high", statement: "...", status: "open",
+        characterizations: [{ origin: { actors: [] }, facets: [{ name: "risk-level", value: "high", system: "x" }] }] },
+    ];
+    const utils = await renderLoaded({ ar: arWithRisks(risks) });
+    fireEvent.click(screen.getAllByText("Risks")[0]);
+    await waitFor(() =>
+      expect(screen.getAllByText(/Risk-HIGH/).length).toBeGreaterThan(0),
+    );
+    const order = readRiskOrder(utils.container);
+    expect(order).toEqual(["Risk-CRITICAL", "Risk-HIGH", "Risk-MODERATE", "Risk-LOW", "Risk-UNKNOWN"]);
+  });
+
+  it("getRiskLevel falls back to the `likelihood` facet when no risk/risk-level facet is present", async () => {
+    const risks = [
+      { uuid: "r-lk", title: "Risk-LIKELIHOOD-HIGH", description: "...", statement: "...", status: "open",
+        characterizations: [{ origin: { actors: [] }, facets: [{ name: "likelihood", value: "high", system: "x" }] }] },
+      { uuid: "r-u", title: "Risk-UNKNOWN", description: "...", statement: "...", status: "open" },
+    ];
+    const utils = await renderLoaded({ ar: arWithRisks(risks) });
+    fireEvent.click(screen.getAllByText("Risks")[0]);
+    await waitFor(() => expect(screen.getAllByText(/Risk-LIKELIHOOD-HIGH/).length).toBeGreaterThan(0));
+    const order = readRiskOrder(utils.container);
+    // The likelihood-only risk sorts as "high" (severity rank 1), before unknown (rank 4).
+    expect(order.indexOf("Risk-LIKELIHOOD-HIGH")).toBeLessThan(order.indexOf("Risk-UNKNOWN"));
+  });
+
+  it("getSortKey formats MS.X.Y.Z observation titles into a zero-padded sortable key (L297-299)", async () => {
+    // The MS pattern is unique to the existing fixture — to verify the
+    // matched-format branch executes, supply observations with MS.* titles
+    // and confirm they sort in zero-padded order.
+    const ar: any = {
+      ...RICH_AR,
+      results: [
+        {
+          ...RICH_AR.results[0],
+          observations: [
+            { uuid: "obs-late", title: "MS.AC.001.020 Late test",
+              methods: ["EXAMINE"], props: [{ name: "control-group", value: "AC" }, { name: "result", value: "pass" }] },
+            { uuid: "obs-early", title: "MS.AC.001.002 Early test",
+              methods: ["EXAMINE"], props: [{ name: "control-group", value: "AC" }, { name: "result", value: "pass" }] },
+            { uuid: "obs-mid", title: "MS.AC.001.010 Mid test",
+              methods: ["EXAMINE"], props: [{ name: "control-group", value: "AC" }, { name: "result", value: "pass" }] },
+          ],
+          risks: [],
+        },
+      ],
+    };
+    const utils = await renderLoaded({ ar });
+    // Navigate to the AC control-group view via the Overview's "Control
+    // Groups" card. Each group row navigates to `group-${groupName}` →
+    // GroupView, which renders the observations sorted by getSortKey.
+    fireEvent.click(screen.getAllByText("AC")[0]);
+    await waitFor(() => expect(screen.getAllByText(/MS\.AC\.001\.010/).length).toBeGreaterThan(0));
+    // Read titles in DOM order; expect zero-padded sort produces 002 < 010 < 020.
+    const titles = Array.from(utils.container.querySelectorAll<HTMLElement>("div"))
+      .map((d) => d.textContent || "")
+      .filter((t) => /MS\.AC\.001\.\d{3}/.test(t))
+      .map((t) => (t.match(/MS\.AC\.001\.\d{3}/) ?? [""])[0])
+      .filter((t, i, arr) => arr.indexOf(t) === i);
+    expect(titles).toEqual(["MS.AC.001.002", "MS.AC.001.010", "MS.AC.001.020"]);
+  });
+});
+
