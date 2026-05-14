@@ -164,6 +164,83 @@ const FLAT_ACTIVITY_AP = {
   tasks: [],
 };
 
+/** Stripped AP — bare-minimum metadata, no local-definitions, no tasks.
+ * Exercises every `field || ""` / `field || []` parser fallback for
+ * absent collections (parseAssessmentPlan L221-292). */
+const STRIPPED_AP = {
+  uuid: "stripped-ap",
+  metadata: { title: "Stripped Assessment Plan" },
+};
+
+/** Wrapped AP — `{ "assessment-plan": {...} }` outer form → exercises the
+ * `raw["assessment-plan"] ?? raw` LHS-truthy parser arm (L222). */
+const WRAPPED_AP = { "assessment-plan": RICH_AP };
+
+/** AP with include-controls selection form (vs `with-ids`) → exercises
+ * the alternate branch in extractControlIds (L140-143). */
+const INCLUDE_CONTROLS_AP = {
+  ...RICH_AP,
+  uuid: "include-controls-ap",
+  "local-definitions": {
+    activities: [
+      {
+        uuid: "act-ic",
+        title: "Activity Using include-controls",
+        description: "Uses the include-controls selection form.",
+        "related-controls": {
+          "control-selections": [
+            { "include-controls": [{ "control-id": "ac-1" }, "ac-2" as any] },
+          ],
+        },
+        steps: [
+          {
+            uuid: "step-ic",
+            title: "Step with include-controls",
+            description: "Has reviewed-controls with include-controls.",
+            "reviewed-controls": {
+              "control-selections": [
+                { "include-controls": [{ "control-id": "ac-1" }] },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  },
+  tasks: [],
+};
+
+/** AP with bare activities/steps/tasks/links/parties → exercises every
+ * absent-field fallback in the parser. */
+const BARE_FIELDS_AP = {
+  uuid: "bare-fields-ap",
+  metadata: {
+    title: "Bare-Fields AP",
+    parties: [{}],            // party with no name → filter(Boolean) drops it
+  },
+  "local-definitions": {
+    activities: [
+      {
+        // Bare activity (no title/no description/no related-controls/no steps).
+        uuid: "act-bare",
+      },
+      {
+        uuid: "act-bare-steps",
+        title: "Activity with Bare Steps",
+        steps: [
+          // Bare step (no title/no description/no method/no links/
+          // no reviewed-controls).
+          { uuid: "step-bare" },
+        ],
+      },
+    ],
+  },
+  tasks: [
+    // Bare task (no title/no type/no description/no timing/no associated-activities).
+    { uuid: "task-bare" },
+  ],
+};
+
 /* ═══════════════════════════════════════════════════════════════════════════
    Harness
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -1375,6 +1452,89 @@ describe("<AssessmentPlanPage /> AP1 — helper edge cases", () => {
     await waitFor(() =>
       expect(screen.queryAllByText(/Description wrapped in a prose object/).length).toBeGreaterThan(0),
     );
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   AP2 — Fragile-branch closures (STRIPPED/WRAPPED/BARE/INCLUDE_CONTROLS)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("<AssessmentPlanPage /> AP2 — fragile-branch closures", () => {
+  it("renders STRIPPED_AP (no local-definitions, no tasks)", async () => {
+    render(<Harness preload ap={STRIPPED_AP as any} />);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Stripped Assessment Plan/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("renders WRAPPED_AP (raw['assessment-plan'] truthy at L222)", async () => {
+    render(<Harness preload ap={WRAPPED_AP as any} />);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Sample Assessment Plan/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("renders INCLUDE_CONTROLS_AP (covers extractControlIds include-controls branch)", async () => {
+    render(<Harness preload ap={INCLUDE_CONTROLS_AP as any} />);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Activity Using include-controls/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("renders BARE_FIELDS_AP (covers every absent-field parser arm)", async () => {
+    render(<Harness preload ap={BARE_FIELDS_AP as any} />);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Bare-Fields AP/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("URL auto-load: WRAPPED_AP", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(WRAPPED_AP), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    ));
+    render(<Harness preload={false} initialPath="/assessment-plan?url=https://example.com/wrapped-ap.json" />);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Sample Assessment Plan/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("URL auto-load: AP without metadata (covers parseAssessmentPlan throw + catch arm)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ "assessment-plan": { uuid: "no-meta" } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    ));
+    render(<Harness preload={false} initialPath="/assessment-plan?url=https://example.com/no-meta-ap.json" />);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/missing metadata|Not a valid OSCAL/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("DropZone dragOver/dragLeave (covers dragging ternary truthy arms)", () => {
+    const { container } = render(<Harness preload={false} />);
+    const zone = container.querySelector('div[style*="dashed"]') as HTMLElement;
+    fireEvent.dragOver(zone);
+    fireEvent.dragLeave(zone);
+    expect(zone).toBeInTheDocument();
+  });
+
+  it("DropZone drop with empty files (covers `if (f)` falsy arm)", () => {
+    const { container } = render(<Harness preload={false} />);
+    const zone = container.querySelector('div[style*="dashed"]') as HTMLElement;
+    fireEvent.drop(zone, { dataTransfer: { files: [] } });
+    expect(screen.getByText(/Drop an OSCAL/)).toBeInTheDocument();
+  });
+
+  it("URL form submit with whitespace input (covers `if (t)` falsy arm)", () => {
+    render(<Harness preload={false} />);
+    const urlInput = screen.getByPlaceholderText(/https:\/\//) as HTMLInputElement;
+    fireEvent.change(urlInput, { target: { value: "   " } });
+    const form = urlInput.closest("form")!;
+    expect(() => fireEvent.submit(form)).not.toThrow();
   });
 });
 
