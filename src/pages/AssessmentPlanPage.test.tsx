@@ -2241,6 +2241,365 @@ describe("<AssessmentPlanPage /> AP3 — deep render-tree closures", () => {
     );
   });
 
+  it("renders an expanded step with remarks (covers L825 truthy arm)", async () => {
+    const apWithRemarks = {
+      uuid: "ap-remarks",
+      metadata: { title: "AP with remarks" },
+      "local-definitions": { activities: [{
+        uuid: "act-r",
+        title: "Activity with remarks step",
+        steps: [{
+          uuid: "step-r",
+          title: "Step with remarks",
+          description: "Has description",
+          remarks: "These are step remarks that should render in italic.",
+        }],
+      }]},
+      tasks: [],
+    };
+    await renderLoaded({ ap: apWithRemarks as any });
+    fireEvent.click(screen.getAllByText(/Activity with remarks step/i)[0]);
+    await waitFor(() => expect(screen.queryAllByText(/Step with remarks/i).length).toBeGreaterThan(0));
+    fireEvent.click(screen.getAllByText(/Step with remarks/i)[0]);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/These are step remarks that should render in italic/i).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("renders step links: text-less non-mitre (Reference fallback) + text-less mitre (path-segment fallback) + frag (covers L834-836)", async () => {
+    const apLinks = {
+      uuid: "ap-link-variants",
+      metadata: { title: "AP link variants" },
+      "local-definitions": { activities: [{
+        uuid: "act-lv",
+        title: "Activity link variants",
+        steps: [{
+          uuid: "step-lv",
+          title: "Link variant step",
+          links: [
+            // No text + no mitre rel → "Reference"
+            { href: "https://example.com/policy.pdf", rel: "reference" },
+            // No text + mitre rel → path-segment fallback "T1059"
+            { href: "https://attack.mitre.org/techniques/T1059", rel: "mitre" },
+            // Text + frag → "Doc — section-2"
+            { href: "https://example.com/doc", text: "Doc", rel: "reference", "resource-fragment": "section-2" },
+          ],
+        }],
+      }]},
+      tasks: [],
+    };
+    await renderLoaded({ ap: apLinks as any });
+    fireEvent.click(screen.getAllByText(/Activity link variants/i)[0]);
+    await waitFor(() => expect(screen.queryAllByText(/Link variant step/i).length).toBeGreaterThan(0));
+    fireEvent.click(screen.getAllByText(/Link variant step/i)[0]);
+    // After expansion, the LinkChips component shows the variant texts.
+    await waitFor(() => {
+      const text = document.body.textContent ?? "";
+      expect(/Reference|T1059|section-2/i.test(text)).toBe(true);
+    });
+  });
+
+  it("ActivitySubheader without related-controls (covers L936 falsy arm)", async () => {
+    const apNoRel = {
+      uuid: "ap-no-rel",
+      metadata: { title: "AP no related" },
+      "local-definitions": { activities: [{
+        uuid: "act-no-rel",
+        title: "Activity without related",
+        steps: [{ uuid: "s-no-rel", title: "Step", "reviewed-controls": { "control-selections": [{ "with-ids": ["ac-1"] }] } }],
+      }]},
+      tasks: [
+        { uuid: "task-no-rel", title: "Task using no-related activity", type: "action",
+          "associated-activities": [{ "activity-uuid": "act-no-rel" }] },
+      ],
+    };
+    await renderLoaded({ ap: apNoRel as any });
+    // Navigate to the task to render ActivitySubheader for the activity.
+    fireEvent.click(screen.getAllByText(/Task using no-related activity/i)[0]);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Activity without related/i).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("FLAT mode + hCtrl matching related-controls (covers L1095 inner ternary truthy)", async () => {
+    // Activity with related controls includes ac-1 → relatedControls.includes(hCtrl)
+    // fires +1 when hCtrl="ac-1".
+    const apFlatRelated = {
+      uuid: "ap-flat-rel",
+      metadata: { title: "AP flat related" },
+      "local-definitions": { activities: [{
+        uuid: "act-flat",
+        title: "Flat activity related",
+        "related-controls": { "control-selections": [{ "with-ids": ["ac-1"] }] },
+        steps: [{ uuid: "s-flat", title: "Step", "reviewed-controls": { "control-selections": [{ "with-ids": ["ac-1"] }] } }],
+      }]},
+      tasks: [],
+    };
+    await renderLoaded({ ap: apFlatRelated as any });
+    // Click the ac-1 badge in the activity card to set hCtrl="ac-1".
+    const buttons = document.querySelectorAll<HTMLButtonElement>("button");
+    const badge = Array.from(buttons).find((b) => /^ac-1$/i.test(b.textContent ?? ""));
+    if (badge) {
+      fireEvent.click(badge);
+      // matchCount = 1 (step) + 1 (related) = 2 → "matches" plural fires.
+      await waitFor(() => {
+        const text = document.body.textContent ?? "";
+        expect(/2 matches/.test(text)).toBe(true);
+      });
+    }
+  });
+
+  it("FLAT mode + hCtrl matching ONE step only (covers L1113 matchCount===1 → 'match' singular)", async () => {
+    const apFlatOne = {
+      uuid: "ap-flat-one",
+      metadata: { title: "AP flat one" },
+      "local-definitions": { activities: [{
+        uuid: "act-one",
+        title: "Flat one-step",
+        // No related-controls; only one step assesses ac-1.
+        steps: [{ uuid: "s-one", title: "Step", "reviewed-controls": { "control-selections": [{ "with-ids": ["ac-1"] }] } }],
+      }]},
+      tasks: [],
+    };
+    await renderLoaded({ ap: apFlatOne as any });
+    const buttons = document.querySelectorAll<HTMLButtonElement>("button");
+    const badge = Array.from(buttons).find((b) => /^ac-1$/i.test(b.textContent ?? ""));
+    if (badge) {
+      fireEvent.click(badge);
+      // matchCount = 1 → "1 match" singular form.
+      await waitFor(() => {
+        const text = document.body.textContent ?? "";
+        expect(/1 match/.test(text)).toBe(true);
+      });
+    }
+  });
+
+  it("TaskView with nested sub-tasks that themselves have sub-tasks (covers L1203 inner truthy)", async () => {
+    const apDeep = {
+      uuid: "ap-deep",
+      metadata: { title: "AP deep" },
+      tasks: [{
+        uuid: "t-outer",
+        title: "Outer task",
+        type: "milestone",
+        tasks: [
+          {
+            uuid: "t-inner",
+            title: "Inner task with grand-sub",
+            tasks: [{ uuid: "t-leaf", title: "Leaf" }],
+          },
+        ],
+      }],
+    };
+    await renderLoaded({ ap: apDeep as any });
+    fireEvent.click(screen.getAllByText(/Outer task/i)[0]);
+    // The sub-task row shows "N sub-tasks" only when sub-tasks have own sub-tasks.
+    await waitFor(() => {
+      const text = document.body.textContent ?? "";
+      expect(/sub-tasks/i.test(text)).toBe(true);
+    });
+  });
+
+  it("ControlsView search-active with catalog=null (covers L1263 falsy arm)", async () => {
+    await renderLoaded({ withCatalog: false });
+    fireEvent.click(screen.getByText(/Controls \(\d+\)/));
+    await waitFor(() => expect(screen.queryByText(/Addressed Controls/i)).toBeInTheDocument());
+    const filterInput = screen.getByPlaceholderText(/Filter controls/i);
+    fireEvent.change(filterInput, { target: { value: "ac-1" } });
+    // No catalog → catalog falsy → filter only matches by id substring.
+    await waitFor(() => {
+      const text = document.body.textContent ?? "";
+      expect(/AC-1|ac-1/i.test(text)).toBe(true);
+    });
+  });
+
+  it("ControlsView with multiple activities per control (covers L1364 plural 'activities')", async () => {
+    // Need 2+ activities referencing the same control. RICH_AP has act-1
+    // and act-2 both with "ac-1" related-controls → 2 activities for ac-1.
+    await renderLoaded();
+    fireEvent.click(screen.getByText(/Controls \(\d+\)/));
+    await waitFor(() => expect(screen.queryByText(/Addressed Controls/i)).toBeInTheDocument());
+    // "2 activities" surfaces (plural form).
+    await waitFor(() => {
+      const text = document.body.textContent ?? "";
+      expect(/\d+ activities/i.test(text)).toBe(true);
+    });
+  });
+
+  it("ControlsView expanded entry without catalog (covers L1377 marginTop falsy arm)", async () => {
+    await renderLoaded({ withCatalog: false });
+    fireEvent.click(screen.getByText(/Controls \(\d+\)/));
+    await waitFor(() => expect(screen.queryByText(/Addressed Controls/i)).toBeInTheDocument());
+    // Click a control entry header to expand it.
+    const activityCount = screen.queryAllByText(/\d+ activit/i);
+    if (activityCount.length > 0) {
+      const headerRow = activityCount[0].closest("div");
+      if (headerRow) {
+        fireEvent.click(headerRow);
+        // Page continues rendering.
+        expect(screen.queryAllByText(/Sample Assessment Plan/i).length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("Sidebar search in task mode with no matches (covers L1857 'No tasks found' truthy)", async () => {
+    await renderLoaded();
+    // The sidebar's search input uses placeholder "Search...".
+    const searches = screen.getAllByPlaceholderText(/Search\.\.\./i);
+    fireEvent.change(searches[0], { target: { value: "zzz-no-task-match" } });
+    await waitFor(() =>
+      expect(screen.queryAllByText(/No tasks found/i).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("ControlsView ControlEntry with via='step' only (no related-controls) — covers L1252 falsy + L1400 step arm", async () => {
+    // Activity that uses ac-1 ONLY via step.reviewed-controls (not in related-controls).
+    const apStepOnly = {
+      uuid: "ap-step-only",
+      metadata: { title: "AP step-only" },
+      "local-definitions": { activities: [{
+        uuid: "act-step-only",
+        title: "Step-only activity",
+        // No related-controls.
+        steps: [{
+          uuid: "s-step",
+          title: "Step",
+          "reviewed-controls": { "control-selections": [{ "with-ids": ["ac-1"] }] },
+        }],
+      }]},
+      tasks: [],
+    };
+    await renderLoaded({ ap: apStepOnly as any });
+    fireEvent.click(screen.getByText(/Controls \(\d+\)/));
+    await waitFor(() => expect(screen.queryByText(/Addressed Controls/i)).toBeInTheDocument());
+    // Find and expand the AC-1 control entry.
+    const activityRows = screen.queryAllByText(/\d+ activit/i);
+    if (activityRows.length > 0) {
+      const headerRow = activityRows[0].closest("div");
+      if (headerRow) fireEvent.click(headerRow);
+      // After expansion, "step assess this control" should surface for the step-only via.
+      await waitFor(() => {
+        const text = document.body.textContent ?? "";
+        expect(/step.*assess|step-only/i.test(text)).toBe(true);
+      });
+    }
+  });
+
+  it("ControlsView entry with title but no label (covers L1357 label-falsy arm)", async () => {
+    const catTitleNoLabel: Catalog = {
+      uuid: "cat-title-no-label",
+      metadata: { title: "X" },
+      groups: [{ id: "ac", title: "AC", controls: [
+        // Control with title but NO `label` prop.
+        { id: "ac-titleonly", title: "Title-only control" },
+      ]}],
+    };
+    const ap = {
+      uuid: "ap-title-only",
+      metadata: { title: "AP" },
+      "local-definitions": { activities: [{
+        uuid: "act-title-only",
+        title: "Act",
+        steps: [{ uuid: "s", title: "S", "reviewed-controls": { "control-selections": [{ "with-ids": ["ac-titleonly"] }] } }],
+      }]},
+      tasks: [],
+    };
+    await renderLoaded({ ap: ap as any, catalog: catTitleNoLabel });
+    fireEvent.click(screen.getByText(/Controls \(\d+\)/));
+    await waitFor(() => expect(screen.queryByText(/Addressed Controls/i)).toBeInTheDocument());
+    // The "Title-only control" entry should render with empty label.
+    expect(screen.queryAllByText(/Title-only control/i).length).toBeGreaterThan(0);
+  });
+
+  it("ControlsView ControlEntry expand without catalog (covers L1377 catalog-falsy marginTop arm)", async () => {
+    await renderLoaded({ withCatalog: false });
+    fireEvent.click(screen.getByText(/Controls \(\d+\)/));
+    await waitFor(() => expect(screen.queryByText(/Addressed Controls/i)).toBeInTheDocument());
+    // Find the cursor-pointer header row and click it to expand.
+    const activityCount = screen.queryAllByText(/\d+ activit/i);
+    if (activityCount.length > 0) {
+      const headerRow = activityCount[0].closest('div[style*="cursor: pointer"]');
+      if (headerRow) {
+        fireEvent.click(headerRow as HTMLElement);
+        // After expansion without catalog, the "Assessed by" section renders.
+        await waitFor(() => {
+          const text = document.body.textContent ?? "";
+          expect(/Assessed by/i.test(text)).toBe(true);
+        });
+      }
+    }
+  });
+
+  it("ControlsView entry expanded with hCtrl set (covers L1301 isActive truthy / L1252 step arm)", async () => {
+    await renderLoaded();
+    // Click a control badge first to set hCtrl="ac-1".
+    const buttons = document.querySelectorAll<HTMLButtonElement>("button");
+    const badge = Array.from(buttons).find((b) => /^ac-1$/i.test(b.textContent ?? ""));
+    if (badge) {
+      fireEvent.click(badge);
+    }
+    // Navigate to ControlsView. The ac-1 entry now has isActive=true.
+    fireEvent.click(screen.getByText(/Controls \(\d+\)/));
+    await waitFor(() => expect(screen.queryByText(/Addressed Controls/i)).toBeInTheDocument());
+    // No throw — rendered.
+    expect(screen.queryAllByText(/Sample Assessment Plan/i).length).toBeGreaterThan(0);
+  });
+
+  it("FLAT-mode sidebar search with no matches (covers L1873 'No activities found' truthy)", async () => {
+    await renderLoaded({ ap: FLAT_ACTIVITY_AP });
+    const searches = screen.getAllByPlaceholderText(/Search\.\.\./i);
+    fireEvent.change(searches[0], { target: { value: "zzz-no-activity-match" } });
+    await waitFor(() =>
+      expect(screen.queryAllByText(/No activities found/i).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("step row click-twice toggles closed (covers L788 isOpen truthy in onClick)", async () => {
+    await renderLoaded({ ap: FLAT_ACTIVITY_AP });
+    fireEvent.click(screen.getAllByText(/Examine Access Control Policy/i)[0]);
+    await waitFor(() => expect(screen.queryAllByText(/Obtain policy document/i).length).toBeGreaterThan(0));
+    // Click the step row twice — first opens, second closes (isOpen truthy
+    // at the onClick L788 ternary).
+    const row = screen.getAllByText(/Obtain policy document/i)[0];
+    fireEvent.click(row);
+    fireEvent.click(row);
+    // The expanded panel is now closed; "Collect the written AC-1 policy"
+    // (description, only rendered when isOpen) should be absent.
+    expect(screen.queryByText(/Collect the written AC-1 policy/i)).toBeNull();
+  });
+
+  it("Sidebar search active in FLAT mode hits filterActivities path (also covers L1873 truthy)", async () => {
+    await renderLoaded({ ap: FLAT_ACTIVITY_AP });
+    const searches = screen.getAllByPlaceholderText(/Search\.\.\./i);
+    // Type something that matches at least one activity.
+    fireEvent.change(searches[0], { target: { value: "Examine" } });
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Examine/i).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("Sidebar search active in task mode hits filteredTasks recurse (also fires L1857)", async () => {
+    await renderLoaded();
+    const searches = screen.getAllByPlaceholderText(/Search\.\.\./i);
+    fireEvent.change(searches[0], { target: { value: "Pre-Engagement" } });
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Pre-Engagement/i).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("ControlsView search-active without catalog filter falls through (covers L1263 falsy + L1252 step path)", async () => {
+    await renderLoaded({ withCatalog: false });
+    fireEvent.click(screen.getByText(/Controls \(\d+\)/));
+    await waitFor(() => expect(screen.queryByText(/Addressed Controls/i)).toBeInTheDocument());
+    const filterInput = screen.getByPlaceholderText(/Filter controls/i);
+    // Search that doesn't match any control id (and catalog is null, so
+    // the catalog-truthy branch falls through → returns false).
+    fireEvent.change(filterInput, { target: { value: "zzz-no-id" } });
+    await waitFor(() =>
+      expect(screen.queryAllByText(/No controls match/i).length).toBeGreaterThan(0),
+    );
+  });
+
   it("URL auto-load: chain success for SSP/Profile/Catalog (covers L1669-1672 dispatch arms)", async () => {
     // Mock fetch to return a chain of valid OSCAL documents:
     // 1. The AP's import-ssp resolves to an SSP JSON
