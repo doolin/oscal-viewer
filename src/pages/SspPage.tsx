@@ -174,7 +174,7 @@ export function trunc(s: string, n: number) {
   return s.length > n ? s.slice(0, n) + "\u2026" : s;
 }
 
-function parseSsp(raw: any): SspParsed {
+export function parseSsp(raw: any): SspParsed {
   const ssp = raw["system-security-plan"] ?? raw;
   if (!ssp.metadata) throw new Error("Not a valid OSCAL SSP — missing metadata.");
   const md = ssp.metadata;
@@ -318,7 +318,7 @@ function parseSsp(raw: any): SspParsed {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 const markedInstance = new Marked({ async: false, gfm: true, breaks: false });
-function renderMarkup(text: string): string {
+export function renderMarkup(text: string): string {
   const html = markedInstance.parse(text) as string;
   const trimmed = html.trim();
   if (trimmed.startsWith("<p>") && trimmed.endsWith("</p>") && trimmed.indexOf("<p>", 1) === -1)
