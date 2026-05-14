@@ -245,6 +245,34 @@ describe("findParentCatalogControl()", () => {
     ]};
     expect(findParentCatalogControl(cat, "pm-2.1")).toBe(parent);
   });
+
+  /* These two close the *if-statement* falsy arms inside the subgroup
+     recursion and the catalog.controls enhancement loop. The above tests
+     close the `?? []` fallbacks; these close the actual if-comparison
+     falsy arms. */
+
+  it("findParentCatalogControl outer searchGroup recurses past a subgroup that misses, then finds in a later subgroup (L181 falsy arm)", () => {
+    const parent: any = { id: "sr-9", controls: [{ id: "sr-9.1" }] };
+    const cat: any = { groups: [
+      { id: "outer", groups: [
+        // First subgroup: contains a different enhancement that misses the search.
+        { id: "first", controls: [{ id: "other-1", controls: [{ id: "other-1.1" }] }] },
+        // Second subgroup: contains the parent. searchGroup(first) returns
+        // undefined → L181 `if (found)` evaluates FALSY → continue to second.
+        { id: "second", controls: [parent] },
+      ]},
+    ]};
+    expect(findParentCatalogControl(cat, "sr-9.1")).toBe(parent);
+  });
+
+  it("findParentCatalogControl iterates a non-matching enhancement at catalog.controls level before finding the parent (L190 falsy arm)", () => {
+    // The parent's `controls` array contains TWO enhancements; only the
+    // second matches enhId. The first iteration evaluates the if as false
+    // (closes L190 falsy), the second as true.
+    const parent: any = { id: "pm-2", controls: [{ id: "pm-2.skip" }, { id: "pm-2.1" }] };
+    const cat: any = { controls: [parent] };
+    expect(findParentCatalogControl(cat, "pm-2.1")).toBe(parent);
+  });
 });
 
 describe("getCatalogLabel()", () => {

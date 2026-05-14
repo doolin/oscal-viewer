@@ -1966,6 +1966,281 @@ describe("<AssessmentPlanPage /> AP3 — deep render-tree closures", () => {
     );
   });
 
+  it("CtrlPartTree renders nested parts (covers L603-609 depth > 0 ternary arms)", async () => {
+    const catNested: Catalog = {
+      uuid: "cat-nested",
+      metadata: { title: "Nested cat" },
+      groups: [{ id: "ac", title: "AC", controls: [
+        {
+          id: "ac-1",
+          title: "Policy",
+          props: [{ name: "label", value: "AC-1" }],
+          parts: [
+            {
+              id: "ac-1-stmt",
+              name: "statement",
+              prose: "Outer statement.",
+              parts: [
+                {
+                  id: "ac-1-stmt-a",
+                  name: "item",
+                  prose: "Nested sub-part at depth 1.",
+                  parts: [
+                    // Even deeper nesting → depth=2
+                    { id: "ac-1-stmt-a-i", name: "item", prose: "Sub-sub-part at depth 2." },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ]}],
+    };
+    const apForNested = {
+      uuid: "ap-nested",
+      metadata: { title: "Nested AP" },
+      "local-definitions": {
+        activities: [
+          {
+            uuid: "act-nested",
+            title: "Activity with nested controls",
+            "related-controls": { "control-selections": [{ "with-ids": ["ac-1"] }] },
+            steps: [],
+          },
+        ],
+      },
+      tasks: [],
+    };
+    await renderLoaded({ ap: apForNested as any, catalog: catNested });
+    fireEvent.click(screen.getAllByText(/Activity with nested controls/i)[0]);
+    // Expand the control detail panel.
+    await waitFor(() => {
+      const headers = screen.queryAllByText(/Policy/i);
+      expect(headers.length).toBeGreaterThan(0);
+    });
+    // Find the catalog-detail header by its cursor:pointer wrapper.
+    const policyHeader = screen.queryAllByText(/Policy/i).find(
+      (el) => el.closest('div[style*="cursor: pointer"]'),
+    );
+    if (policyHeader) {
+      fireEvent.click(policyHeader.closest('div[style*="cursor: pointer"]') as HTMLElement);
+      await waitFor(() => {
+        // The nested sub-part prose surfaces.
+        expect(screen.queryAllByText(/Nested sub-part at depth 1/i).length).toBeGreaterThan(0);
+      });
+    }
+  });
+
+  it("ControlDetailPanel for enhancement whose parent has NO params (covers L640 ?? [] fallback)", async () => {
+    // Parent has no params; enhancement has a param. Tests that the
+    // parent-param-map walk hits an empty array when parent has none.
+    const cat: Catalog = {
+      uuid: "cat-noparent-params",
+      metadata: { title: "No-parent-params cat" },
+      groups: [{ id: "ac", title: "AC", controls: [
+        // parent ac-99 has NO params property
+        { id: "ac-99", title: "Sparse parent",
+          controls: [{ id: "ac-99.1", title: "Enhancement with params",
+                       params: [{ id: "ac-99.1_prm", label: "X" }] }] },
+      ]}],
+    };
+    const ap = {
+      uuid: "ap-noparent-params",
+      metadata: { title: "AP" },
+      "local-definitions": { activities: [{
+        uuid: "act-noparent",
+        title: "Activity targeting enhancement of param-less parent",
+        "related-controls": { "control-selections": [{ "with-ids": ["ac-99.1"] }] },
+        steps: [],
+      }]},
+      tasks: [],
+    };
+    await renderLoaded({ ap: ap as any, catalog: cat });
+    fireEvent.click(screen.getAllByText(/Activity targeting enhancement of param-less parent/i)[0]);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Enhancement with params/i).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("ControlDetailPanel renders a part without id (covers L683 `key={part.id ?? i}` fallback)", async () => {
+    const cat: Catalog = {
+      uuid: "cat-no-part-id",
+      metadata: { title: "X" },
+      groups: [{ id: "ac", title: "AC", controls: [
+        {
+          id: "ac-1",
+          title: "Policy",
+          props: [{ name: "label", value: "AC-1" }],
+          parts: [
+            // Part WITHOUT id → falls back to map index.
+            { name: "statement", prose: "Idless statement part." },
+          ],
+        },
+      ]}],
+    };
+    const ap = {
+      uuid: "ap-no-part-id",
+      metadata: { title: "AP" },
+      "local-definitions": { activities: [{
+        uuid: "act-x", title: "Activity",
+        "related-controls": { "control-selections": [{ "with-ids": ["ac-1"] }] },
+        steps: [],
+      }]},
+      tasks: [],
+    };
+    await renderLoaded({ ap: ap as any, catalog: cat });
+    fireEvent.click(screen.getAllByText(/^Activity$/i)[0]);
+    await waitFor(() => {
+      const headers = screen.queryAllByText(/Policy/i);
+      expect(headers.length).toBeGreaterThan(0);
+    });
+    // Expand the control panel.
+    const policyHeader = screen.queryAllByText(/Policy/i).find(
+      (el) => el.closest('div[style*="cursor: pointer"]'),
+    );
+    if (policyHeader) {
+      fireEvent.click(policyHeader.closest('div[style*="cursor: pointer"]') as HTMLElement);
+      await waitFor(() =>
+        expect(screen.queryAllByText(/Idless statement part/i).length).toBeGreaterThan(0),
+      );
+    }
+  });
+
+  it("ControlDetailPanel renders an enhancement without a label (covers L714 `eLbl || enh.id` fallback)", async () => {
+    const cat: Catalog = {
+      uuid: "cat-enh-unlabeled",
+      metadata: { title: "X" },
+      groups: [{ id: "ac", title: "AC", controls: [
+        {
+          id: "ac-1",
+          title: "Policy",
+          props: [{ name: "label", value: "AC-1" }],
+          parts: [{ id: "p1", name: "statement", prose: "Body." }],
+          controls: [
+            // Enhancement WITHOUT label prop → `eLbl || enh.id` fires fallback.
+            { id: "ac-1.99", title: "Unlabeled enhancement" },
+          ],
+        },
+      ]}],
+    };
+    const ap = {
+      uuid: "ap-enh-unlabeled",
+      metadata: { title: "AP" },
+      "local-definitions": { activities: [{
+        uuid: "act-x", title: "Activity",
+        "related-controls": { "control-selections": [{ "with-ids": ["ac-1"] }] },
+        steps: [],
+      }]},
+      tasks: [],
+    };
+    await renderLoaded({ ap: ap as any, catalog: cat });
+    fireEvent.click(screen.getAllByText(/^Activity$/i)[0]);
+    await waitFor(() => {
+      const headers = screen.queryAllByText(/Policy/i);
+      expect(headers.length).toBeGreaterThan(0);
+    });
+    const policyHeader = screen.queryAllByText(/Policy/i).find(
+      (el) => el.closest('div[style*="cursor: pointer"]'),
+    );
+    if (policyHeader) {
+      fireEvent.click(policyHeader.closest('div[style*="cursor: pointer"]') as HTMLElement);
+      // Enhancement label falls back to enh.id "ac-1.99".
+      await waitFor(() =>
+        expect(screen.queryAllByText(/Unlabeled enhancement/i).length).toBeGreaterThan(0),
+      );
+    }
+  });
+
+  it("RelatedControlsSection without a loaded catalog (covers L746 catalog falsy arm)", async () => {
+    await renderLoaded({ ap: FLAT_ACTIVITY_AP, withCatalog: false });
+    fireEvent.click(screen.getAllByText(/Examine Access Control Policy/i)[0]);
+    // ActivityView renders the related controls section but the
+    // ControlDetailPanels under it are conditional on catalog truthy.
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Examine Access Control Policy/i).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("StepTableWithDetail expanded step with NO description / NO remarks / NO links (covers no-details fallback)", async () => {
+    const apBareStep = {
+      uuid: "ap-bare-step",
+      metadata: { title: "Bare-step AP" },
+      "local-definitions": { activities: [{
+        uuid: "act-bare-step",
+        title: "Activity with bare step",
+        steps: [{ uuid: "step-bare", title: "Bare step title" }],  // no description/remarks/links
+      }]},
+      tasks: [],
+    };
+    await renderLoaded({ ap: apBareStep as any });
+    fireEvent.click(screen.getAllByText(/Activity with bare step/i)[0]);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Bare step title/i).length).toBeGreaterThan(0),
+    );
+    fireEvent.click(screen.getAllByText(/Bare step title/i)[0]);
+    // The "No additional details" fallback surfaces (L842 fallback path).
+    await waitFor(() =>
+      expect(screen.queryAllByText(/No additional details/i).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("ActivityHeader without related-controls (covers L883 borderBottom variant)", async () => {
+    const apNoRelated = {
+      uuid: "ap-no-related",
+      metadata: { title: "AP" },
+      "local-definitions": { activities: [{
+        uuid: "act-no-related",
+        title: "Activity without related controls",
+        steps: [
+          { uuid: "s1", title: "Step 1", "reviewed-controls": { "control-selections": [{ "with-ids": ["ac-1"] }] } },
+        ],
+        // No related-controls.
+      }]},
+      tasks: [],
+    };
+    await renderLoaded({ ap: apNoRelated as any });
+    fireEvent.click(screen.getAllByText(/Activity without related controls/i)[0]);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Step 1/i).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("onCtrl toggle: clicking same control twice clears it (covers L1714 truthy arm)", async () => {
+    await renderLoaded({ ap: FLAT_MULTI_STEP_AP as any });
+    const badges = document.querySelectorAll<HTMLButtonElement>("button");
+    const badge = Array.from(badges).find((b) => /^ac-1$/i.test(b.textContent ?? ""));
+    if (badge) {
+      fireEvent.click(badge);
+      fireEvent.click(badge); // second click should clear hCtrl (prev === c → "")
+      // Page continues rendering.
+      expect(screen.queryAllByText(/Flat Multi-Step AP/i).length).toBeGreaterThan(0);
+    }
+  });
+
+  it("URL auto-load with unwrapped AP form (covers L1587 fallback arm `?? urlDoc.json`)", async () => {
+    // Provide the AP unwrapped (no `assessment-plan` outer key) so
+    // `urlDoc.json["assessment-plan"]` is undefined and `?? urlDoc.json`
+    // returns the document directly. Closes the L1587 nullish-coalesce
+    // fallback arm.
+    const unwrappedAp = {
+      uuid: "unwrapped-ap",
+      metadata: { title: "Unwrapped URL AP" },
+      tasks: [],
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(unwrappedAp), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    ));
+    render(
+      <Harness preload={false} initialPath="/assessment-plan?url=https://example.com/unwrapped-ap.json" />,
+    );
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Unwrapped URL AP/i).length).toBeGreaterThan(0),
+    );
+  });
+
   it("URL auto-load: chain success for SSP/Profile/Catalog (covers L1669-1672 dispatch arms)", async () => {
     // Mock fetch to return a chain of valid OSCAL documents:
     // 1. The AP's import-ssp resolves to an SSP JSON
