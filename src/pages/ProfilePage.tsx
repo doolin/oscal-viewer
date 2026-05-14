@@ -587,14 +587,18 @@ function IcoLink({ size = 14, style }: IconProps) {
 function IcoAlert({ size = 16, style }: IconProps) {
   return <svg style={style} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>;
 }
+/* v8 ignore start — reserved for future use */
 // @ts-ignore: reserved for future use
 function IcoPlus({ size = 14, style }: IconProps) {
   return <svg style={style} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>;
 }
+/* v8 ignore stop */
+/* v8 ignore start — reserved for future use */
 // @ts-ignore: reserved for future use
 function IcoMinus({ size = 14, style }: IconProps) {
   return <svg style={style} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12" /></svg>;
 }
+/* v8 ignore stop */
 
 /** Add badge — green circle with "A" */
 function AddBadge({ size = 20 }: { size?: number }) {

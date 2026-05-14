@@ -439,6 +439,7 @@ function Card({ children, style: s }: { children: ReactNode; style?: CSSProperti
   );
 }
 
+/* v8 ignore start — reserved for future use */
 function SectionLabel({ children, style: s }: { children: ReactNode; style?: CSSProperties }) {
   return (
     <div style={{
@@ -450,6 +451,7 @@ function SectionLabel({ children, style: s }: { children: ReactNode; style?: CSS
   );
 }
 void SectionLabel; // reserved for future use
+/* v8 ignore stop */
 
 function MField({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   if (!value) return null;

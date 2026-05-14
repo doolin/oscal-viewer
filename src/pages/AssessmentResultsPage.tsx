@@ -2396,6 +2396,7 @@ function CatalogContextCard({ catalog }: { catalog: OscalCatalog | null }) {
    CATALOG PART TREE — recursive hierarchical rendering
    ═══════════════════════════════════════════════════════════════════════════ */
 
+/* v8 ignore start — reserved for future catalog enrichment */
 // @ts-ignore: reserved for future catalog enrichment
 function CatalogPartTree({ part, depth, paramMap }: { part: CatalogPart; depth: number; paramMap: Record<string, CatalogParam> }) {
   const subParts = part.parts ?? [];
@@ -2427,11 +2428,13 @@ function CatalogPartTree({ part, depth, paramMap }: { part: CatalogPart; depth: 
     </div>
   );
 }
+/* v8 ignore stop */
 
 /* ═══════════════════════════════════════════════════════════════════════════
    CATALOG PROSE WITH PARAMS — renders prose with inline param pills
    ═══════════════════════════════════════════════════════════════════════════ */
 
+/* v8 ignore start — only reachable via CatalogPartTree (also reserved for future) */
 function CatalogProseWithParams({ text, paramMap }: { text: string; paramMap: Record<string, CatalogParam> }) {
   const parts = text.split(/(\{\{\s*insert:\s*param\s*,\s*[^}]+?\s*\}\})/g);
 
@@ -2470,11 +2473,13 @@ function CatalogProseWithParams({ text, paramMap }: { text: string; paramMap: Re
     </span>
   );
 }
+/* v8 ignore stop */
 
 /* ═══════════════════════════════════════════════════════════════════════════
    COLLAPSIBLE SECTION
    ═══════════════════════════════════════════════════════════════════════════ */
 
+/* v8 ignore start — reserved for future use */
 // @ts-ignore: reserved for future use
 function CollapsibleSection({ title, children }: { title: string; children: ReactNode }) {
   const [open, setOpen] = useState(false);
@@ -2491,11 +2496,13 @@ function CollapsibleSection({ title, children }: { title: string; children: Reac
     </div>
   );
 }
+/* v8 ignore stop */
 
 /* ═══════════════════════════════════════════════════════════════════════════
    HELPER — get all controls flat from a catalog
    ═══════════════════════════════════════════════════════════════════════════ */
 
+/* v8 ignore start — reserved for future catalog enrichment */
 // @ts-ignore: reserved for future catalog enrichment
 function getAllCatalogControls(catalog: OscalCatalog): CatalogControl[] {
   const result: CatalogControl[] = [];
@@ -2513,6 +2520,7 @@ function getAllCatalogControls(catalog: OscalCatalog): CatalogControl[] {
   });
   return result;
 }
+/* v8 ignore stop */
 
 /* ═══════════════════════════════════════════════════════════════════════════
    FINDINGS LIST VIEW — tabular list of all findings with state
