@@ -219,8 +219,40 @@ const RICH_AR = {
           { href: "https://example.com/ap.json", "media-type": "application/json" },
         ],
       },
+      // Bare resource → exercises every absent-field arm.
+      { uuid: "res-bare" },
     ],
   },
+};
+
+/* Stripped AR — bare-minimum (metadata + results) → exercises every
+ * `field || ""` / `field || []` arm in the parser/render. */
+const STRIPPED_AR = {
+  uuid: "stripped-ar",
+  metadata: { title: "Stripped Assessment Results" },
+  results: [
+    {
+      uuid: "stripped-result",
+      title: "Stripped Result",
+      description: "Bare-minimum result.",
+      start: "2026-04-01T00:00:00Z",
+      // No observations, no risks, no findings, no assessment-log,
+      // no reviewed-controls, no origins.
+    },
+  ],
+};
+
+/* Wrapped AR — `{ "assessment-results": {...} }` outer form → exercises
+ * the `urlDoc.json["assessment-results"] ?? urlDoc.json` truthy arm
+ * (L514) and the same in loadFile. */
+const WRAPPED_AR = { "assessment-results": RICH_AR };
+
+/* AR with empty results array → exercises `results.length === 0`
+ * empty-state render path. */
+const EMPTY_RESULTS_AR = {
+  ...RICH_AR,
+  uuid: "empty-results-ar",
+  results: [],
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -2193,6 +2225,79 @@ describe("<AssessmentResultsPage /> AR6 — final mop-up", () => {
     await waitFor(() =>
       expect(screen.queryAllByText(/No control patterns here/).length).toBeGreaterThan(0),
     );
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   AR7 — Fragile-branch closures via STRIPPED/WRAPPED/EMPTY_RESULTS fixtures
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("<AssessmentResultsPage /> AR7 — fragile-branch closures", () => {
+  it("renders STRIPPED_AR (single bare result)", async () => {
+    await renderLoaded({ ar: STRIPPED_AR as any });
+    expect(screen.queryAllByText(/Stripped Assessment Results/).length).toBeGreaterThan(0);
+  });
+
+  it("URL auto-load: WRAPPED_AR (raw['assessment-results'] truthy arm)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(WRAPPED_AR), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    ));
+    render(<Harness preload={false} initialPath="/assessment-results?url=https://example.com/wrapped-ar.json" />);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Sample Assessment Results/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("URL auto-load: AR without metadata (covers L515 error arm)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ "assessment-results": { uuid: "no-meta", results: [] } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    ));
+    render(<Harness preload={false} initialPath="/assessment-results?url=https://example.com/no-meta-ar.json" />);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/no metadata/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("URL auto-load: AR without results array (covers L517 error arm)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ "assessment-results": { uuid: "no-res", metadata: { title: "X" } } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    ));
+    render(<Harness preload={false} initialPath="/assessment-results?url=https://example.com/no-results-ar.json" />);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/no results array/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("DropZone dragOver/dragLeave (covers dragging ternary truthy arms)", () => {
+    const { container } = render(<Harness preload={false} />);
+    const zone = container.querySelector('div[style*="dashed"]') as HTMLElement;
+    fireEvent.dragOver(zone);
+    fireEvent.dragLeave(zone);
+    expect(zone).toBeInTheDocument();
+  });
+
+  it("DropZone drop with empty files (covers `if (f)` falsy arm)", () => {
+    const { container } = render(<Harness preload={false} />);
+    const zone = container.querySelector('div[style*="dashed"]') as HTMLElement;
+    fireEvent.drop(zone, { dataTransfer: { files: [] } });
+    expect(screen.getByText(/Drop an OSCAL/)).toBeInTheDocument();
+  });
+
+  it("URL form submit with whitespace input (covers `if (t)` falsy arm)", () => {
+    render(<Harness preload={false} />);
+    const urlInput = screen.getByPlaceholderText(/https:\/\//) as HTMLInputElement;
+    fireEvent.change(urlInput, { target: { value: "   " } });
+    const form = urlInput.closest("form")!;
+    expect(() => fireEvent.submit(form)).not.toThrow();
   });
 });
 
