@@ -67,6 +67,16 @@ Organised into three buckets:
 - All seven viewer page `loadFile` validators use `json["<key>"] ?? json`
   to accept both wrapped and unwrapped root payloads. Tests exercise
   both shapes. This is probably intentional.
+- **SspPage `ControlDetailView` crashes when an implemented-requirement
+  `by-component` (under `ir.by-components` or `ir.statements[].by-components`)
+  lacks `component-uuid`.** `SspPage.tsx:1807` calls `addComp(bc.componentUuid)`,
+  which then dereferences `compUuid.slice(0, 12)` on undefined — runtime
+  error during render. Discovered while building fragile-branch closure
+  fixtures (round PR #71+). Worked around in the SSP coverage round by
+  always providing a placeholder `"component-uuid": "comp-1"` in bare
+  by-components fixtures. Fix candidate: defensive `if (!compUuid) return`
+  guard, or earlier filter at parser. Add a brittle BUG: test that asserts
+  the crash, then flip the assertion when the guard lands.
 - Page validators require only `metadata` (AP, SSP, CDef, Catalog);
   **Profile additionally requires `imports`** (`ProfilePage.tsx:725`)
   and AssessmentResults additionally requires a `results` array that's
