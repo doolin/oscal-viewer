@@ -158,21 +158,21 @@ const RES_TYPE_META: Record<string, { label: string; color: string; icon: string
   "threat-intelligence": { label: "Threat Intel", color: colors.red, icon: "target" },
 };
 
-function familyOf(id: string) {
+export function familyOf(id: string) {
   const m = (id || "").match(/^([a-z]{2})-/i);
   return m ? m[1].toUpperCase() : "??";
 }
-function familyName(id: string) {
+export function familyName(id: string) {
   return FAMILIES[familyOf(id)] ?? familyOf(id);
 }
-function txt(v: unknown): string {
+export function txt(v: unknown): string {
   if (!v) return "";
   if (typeof v === "string") return v;
   if (typeof v === "object" && v !== null && "prose" in v)
     return String((v as { prose: unknown }).prose);
   return String(v);
 }
-function fmtDate(s?: string) {
+export function fmtDate(s?: string) {
   if (!s) return "—";
   try {
     return new Date(s).toLocaleDateString("en-US", {
@@ -184,20 +184,20 @@ function fmtDate(s?: string) {
     return s;
   }
 }
-function partyName(uuid: string, parties: Party[]) {
+export function partyName(uuid: string, parties: Party[]) {
   const p = parties.find((x) => x.uuid === uuid);
   return p ? p.name : uuid ? uuid.slice(0, 8) : "Unknown";
 }
-function resType(res: Resource) {
+export function resType(res: Resource) {
   const tp = (res.props ?? []).find((p) => p.name === "type");
   return tp ? tp.value : "other";
 }
-function trunc(s: string, n: number) {
+export function trunc(s: string, n: number) {
   return s.length > n ? s.slice(0, n) + "\u2026" : s;
 }
 
 /** Derive a human-readable label for a control implementation from its source URI. */
-function implLabel(impl: ControlImplementation, index: number, resolvedTitle?: string | null): string {
+export function implLabel(impl: ControlImplementation, index: number, resolvedTitle?: string | null): string {
   if (resolvedTitle) return resolvedTitle;
   try {
     const url = new URL(impl.source);
