@@ -19,6 +19,9 @@ import {
   renderParamTextProfile,
   resolveInlineParamsProfile,
   resolveControlParts,
+  fmtDate,
+  trunc,
+  getFamilyNameFromCatalog,
 } from "./ProfilePage";
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -168,6 +171,18 @@ describe("resolveImportHref()", () => {
     const imp: any = { href: "#missing" };
     expect(resolveImportHref(profile, imp)).toEqual({
       url: null, title: null, resourceUuid: "missing",
+    });
+  });
+
+  it("returns null title when resource has no title (?? null branch)", () => {
+    const profile: any = { "back-matter": { resources: [
+      { uuid: "res-3", rlinks: [{ href: "https://example.com/x.json" }] },
+    ]}};
+    const imp: any = { href: "#res-3" };
+    expect(resolveImportHref(profile, imp)).toEqual({
+      url: "https://example.com/x.json",
+      title: null,
+      resourceUuid: "res-3",
     });
   });
 });
@@ -579,5 +594,119 @@ describe("resolveControlParts()", () => {
       adds: [{ "by-id": "missing", parts: [{ name: "x", prose: "x" }] }],
     } as any);
     expect(out.length).toBe(1);
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Pure-function unit tests for the internal helpers exported in PR #95.
+   Drives branch coverage on lines 176-257 of ProfilePage.tsx.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── fmtDate — locale-formatted date or em-dash ───────────────────── */
+describe("fmtDate()", () => {
+  it("returns em-dash for undefined", () => {
+    expect(fmtDate(undefined)).toBe("—");
+  });
+
+  it("returns em-dash for empty string", () => {
+    expect(fmtDate("")).toBe("—");
+  });
+
+  it("formats a valid ISO date", () => {
+    const out = fmtDate("2026-03-15T00:00:00Z");
+    expect(out).toMatch(/2026/);
+  });
+
+  it("returns a string for unparseable input (catch arm)", () => {
+    expect(typeof fmtDate("not-a-date")).toBe("string");
+  });
+});
+
+/* ─── trunc — string truncate with ellipsis ────────────────────────── */
+describe("trunc()", () => {
+  it("returns the string unchanged when shorter than n", () => {
+    expect(trunc("short", 10)).toBe("short");
+  });
+
+  it("returns the string unchanged when exactly length n", () => {
+    expect(trunc("12345", 5)).toBe("12345");
+  });
+
+  it("truncates with ellipsis when longer than n", () => {
+    expect(trunc("this is a long string", 10)).toBe("this is a …");
+  });
+
+  it("returns empty string unchanged", () => {
+    expect(trunc("", 5)).toBe("");
+  });
+});
+
+/* ─── getFamilyNameFromCatalog — catalog-aware family lookup ───────── */
+describe("getFamilyNameFromCatalog()", () => {
+  it("returns FAMILY_NAMES entry when catalog is null and prefix is known", () => {
+    expect(getFamilyNameFromCatalog(null, "ac", ["ac-1"])).toBeTruthy();
+  });
+
+  it("falls back to prefix.toUpperCase() when catalog is null and prefix unknown", () => {
+    expect(getFamilyNameFromCatalog(null, "zz", ["zz-1"])).toBe("ZZ");
+  });
+
+  it("returns FAMILY_NAMES entry when catalog is present but has no matching control prefix", () => {
+    const cat: any = {
+      uuid: "c",
+      metadata: { title: "" },
+      groups: [{ id: "ac", title: "Access Control From Catalog", controls: [{ id: "ac-1" }] }],
+    };
+    // controlIds doesn't include any "zz-*" → controlWithPrefix is undefined
+    // → falls back to FAMILY_NAMES[prefix] || prefix.toUpperCase()
+    expect(getFamilyNameFromCatalog(cat, "zz", ["ac-1"])).toBe("ZZ");
+  });
+
+  it("uses the catalog group title when a matching control is found", () => {
+    const cat: any = {
+      uuid: "c",
+      metadata: { title: "" },
+      groups: [{
+        id: "ac",
+        title: "Access Control (Custom Catalog Name)",
+        controls: [{ id: "ac-1" }],
+      }],
+    };
+    expect(getFamilyNameFromCatalog(cat, "ac", ["ac-1"])).toBe(
+      "Access Control (Custom Catalog Name)",
+    );
+  });
+
+  it("falls back to FAMILY_NAMES when control is in catalog but its group has no title", () => {
+    const cat: any = {
+      uuid: "c",
+      metadata: { title: "" },
+      groups: [{ id: "ac", controls: [{ id: "ac-1" }] }],  // no title field
+    };
+    // findControlGroupInCatalog finds the group, but group.title is missing,
+    // so falls through to FAMILY_NAMES["ac"] (which exists).
+    const out = getFamilyNameFromCatalog(cat, "ac", ["ac-1"]);
+    expect(out).toBeTruthy();
+    expect(out).not.toBe(""); // not the empty title
+  });
+
+  it("falls back to prefix.toUpperCase() when control isn't found in any group", () => {
+    const cat: any = {
+      uuid: "c",
+      metadata: { title: "" },
+      groups: [{ id: "other", title: "Other", controls: [{ id: "other-1" }] }],
+    };
+    // ac-1 is in controlIds but findControlGroupInCatalog won't find it.
+    // For an unknown family prefix, falls back to prefix.toUpperCase().
+    expect(getFamilyNameFromCatalog(cat, "zz", ["zz-1"])).toBe("ZZ");
+  });
+
+  it("handles enhancement IDs when looking up controlWithPrefix", () => {
+    const cat: any = {
+      uuid: "c",
+      metadata: { title: "" },
+      groups: [{ id: "ac", title: "AC Family", controls: [{ id: "ac-1", controls: [{ id: "ac-1.1" }] }] }],
+    };
+    expect(getFamilyNameFromCatalog(cat, "ac", ["ac-1.1"])).toBe("AC Family");
   });
 });
