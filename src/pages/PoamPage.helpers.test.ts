@@ -282,4 +282,132 @@ describe("findParentCatalogControl()", () => {
     const cat: any = { uuid: "c", metadata: { title: "" } };
     expect(findParentCatalogControl(cat, "ac-1.1")).toBeUndefined();
   });
+
+  it("iterates past a non-matching control in a top-level group before finding the parent", () => {
+    const parent = { id: "ac-2", controls: [{ id: "ac-2.1" }] };
+    const cat: any = { uuid: "c", metadata: { title: "" }, groups: [
+      { id: "ac", title: "AC", controls: [
+        { id: "ac-1", controls: [{ id: "ac-1.1" }] }, // not the match
+        parent,                                       // the match
+      ]},
+    ]};
+    expect(findParentCatalogControl(cat, "ac-2.1")).toBe(parent);
+  });
+
+  it("iterates past a control without enhancements when scanning a group", () => {
+    const parent = { id: "ac-2", controls: [{ id: "ac-2.1" }] };
+    const cat: any = { uuid: "c", metadata: { title: "" }, groups: [
+      { id: "ac", title: "AC", controls: [
+        { id: "ac-1" },  // no `controls` → `?? []` fallback hits
+        parent,
+      ]},
+    ]};
+    expect(findParentCatalogControl(cat, "ac-2.1")).toBe(parent);
+  });
+
+  it("iterates past a non-matching control under catalog.controls top-level", () => {
+    const parent = { id: "pm-2", controls: [{ id: "pm-2.1" }] };
+    const cat: any = { uuid: "c", metadata: { title: "" }, controls: [
+      { id: "pm-1", controls: [{ id: "pm-1.1" }] }, // not the match
+      parent,
+    ]};
+    expect(findParentCatalogControl(cat, "pm-2.1")).toBe(parent);
+  });
+
+  it("iterates past a control without enhancements under catalog.controls top-level", () => {
+    const parent = { id: "pm-2", controls: [{ id: "pm-2.1" }] };
+    const cat: any = { uuid: "c", metadata: { title: "" }, controls: [
+      { id: "pm-1" },  // no `controls` → `?? []` fallback hits
+      parent,
+    ]};
+    expect(findParentCatalogControl(cat, "pm-2.1")).toBe(parent);
+  });
+});
+
+/* ─── findCatalogControl iteration-path closures ─────────────────────── */
+
+describe("findCatalogControl() iteration-path branches", () => {
+  it("iterates past a non-matching enhancement before finding a match in a group", () => {
+    const enh = { id: "ac-1.2" };
+    const cat: any = { uuid: "c", metadata: { title: "" }, groups: [
+      { id: "ac", title: "AC", controls: [
+        { id: "ac-1", controls: [{ id: "ac-1.1" }, enh] },
+      ]},
+    ]};
+    expect(findCatalogControl(cat, "ac-1.2")).toBe(enh);
+  });
+
+  it("iterates a control without `controls` via the ?? [] fallback (group scan)", () => {
+    const target = { id: "ac-2" };
+    const cat: any = { uuid: "c", metadata: { title: "" }, groups: [
+      { id: "ac", title: "AC", controls: [
+        { id: "ac-1" }, // no `controls` → `?? []` fallback
+        target,
+      ]},
+    ]};
+    expect(findCatalogControl(cat, "ac-2")).toBe(target);
+  });
+
+  it("iterates past a non-matching control at catalog.controls top level", () => {
+    const target = { id: "pm-2" };
+    const cat: any = { uuid: "c", metadata: { title: "" }, controls: [
+      { id: "pm-1" },
+      target,
+    ]};
+    expect(findCatalogControl(cat, "pm-2")).toBe(target);
+  });
+
+  it("iterates a top-level control without `controls` via the ?? [] fallback", () => {
+    // First control has no `controls`; second has one. We search for an
+    // enhancement under the second to force iteration through the first
+    // control's empty `controls ?? []` arm.
+    const enh = { id: "pm-2.1" };
+    const cat: any = { uuid: "c", metadata: { title: "" }, controls: [
+      { id: "pm-1" }, // no `controls` → `?? []` fallback fires
+      { id: "pm-2", controls: [enh] },
+    ]};
+    expect(findCatalogControl(cat, "pm-2.1")).toBe(enh);
+  });
+
+  it("iterates past a non-matching enhancement at catalog.controls top level", () => {
+    const target = { id: "pm-1.2" };
+    const cat: any = { uuid: "c", metadata: { title: "" }, controls: [
+      { id: "pm-1", controls: [{ id: "pm-1.1" }, target] }, // skip pm-1.1, match pm-1.2
+    ]};
+    expect(findCatalogControl(cat, "pm-1.2")).toBe(target);
+  });
+
+  it("returns undefined after iterating multiple non-matching enhancements", () => {
+    const cat: any = { uuid: "c", metadata: { title: "" }, groups: [
+      { id: "ac", title: "AC", controls: [
+        { id: "ac-1", controls: [{ id: "ac-1.1" }, { id: "ac-1.2" }] },
+      ]},
+    ]};
+    expect(findCatalogControl(cat, "ac-1.99")).toBeUndefined();
+  });
+
+  it("recurses past a subgroup with no match before finding it in a later subgroup", () => {
+    // Forces `if (found) return found` after a recursive subgroup call
+    // returns undefined (falsy arm of L321 in findCatalogControl /
+    // analogous arm in findParentCatalogControl).
+    const target = { id: "sr-9" };
+    const cat: any = { uuid: "c", metadata: { title: "" }, groups: [
+      { id: "outer", title: "Outer", groups: [
+        { id: "first", title: "First", controls: [{ id: "other-1" }] }, // miss
+        { id: "second", title: "Second", controls: [target] },         // hit
+      ]},
+    ]};
+    expect(findCatalogControl(cat, "sr-9")).toBe(target);
+  });
+
+  it("findParentCatalogControl recurses past a subgroup miss before finding the parent", () => {
+    const parent = { id: "sr-9", controls: [{ id: "sr-9.1" }] };
+    const cat: any = { uuid: "c", metadata: { title: "" }, groups: [
+      { id: "outer", title: "Outer", groups: [
+        { id: "first", title: "First", controls: [{ id: "other-1", controls: [{ id: "other-1.1" }] }] },
+        { id: "second", title: "Second", controls: [parent] },
+      ]},
+    ]};
+    expect(findParentCatalogControl(cat, "sr-9.1")).toBe(parent);
+  });
 });
