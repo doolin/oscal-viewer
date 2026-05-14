@@ -20,6 +20,8 @@ import {
   getCatalogLabel,
   hrefToUuid,
   buildComponentHierarchy,
+  parseSsp,
+  renderMarkup,
 } from "./SspPage";
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -695,5 +697,291 @@ describe("buildComponentHierarchy()", () => {
     const { rootIndices, childrenByIndex } = buildComponentHierarchy(comps);
     expect(rootIndices).toEqual([0]);
     expect(childrenByIndex.get(0)).toEqual([1]);
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Pure-function unit tests for the parseSsp + renderMarkup helpers
+   exported in PR #97. Uses the maximalist/minimalist fixture pattern
+   (user's "GFO" technique) to drive truthy + falsy arms of every
+   `||` and `??` default in parseSsp.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("parseSsp()", () => {
+  it("throws when ssp.metadata is missing", () => {
+    expect(() => parseSsp({})).toThrow(/missing metadata/);
+  });
+
+  it("unwraps the system-security-plan key when present (?? raw arm)", () => {
+    const raw = { "system-security-plan": { metadata: { title: "Wrapped" } } };
+    expect(parseSsp(raw).metadata.title).toBe("Wrapped");
+  });
+
+  it("accepts a bare SSP object when system-security-plan key is absent", () => {
+    expect(parseSsp({ metadata: { title: "Bare" } }).metadata.title).toBe("Bare");
+  });
+
+  /* ─── Minimalist fixture — every `|| default` arm fires ───────────── */
+  it("applies every default when input is the bare minimum (only metadata)", () => {
+    const out = parseSsp({ metadata: {} });
+
+    expect(out.metadata.title).toBe("Untitled SSP");
+    expect(out.metadata.version).toBe("");
+    expect(out.metadata.oscalVersion).toBe("");
+    expect(out.metadata.lastModified).toBe("");
+    expect(out.metadata.published).toBe("");
+    expect(out.metadata.parties).toEqual([]);
+    expect(out.metadata.roles).toEqual([]);
+    expect(out.metadata.responsibleParties).toEqual([]);
+
+    expect(out.systemCharacteristics.systemName).toBe("");
+    expect(out.systemCharacteristics.systemNameShort).toBe("");
+    expect(out.systemCharacteristics.description).toBe("");
+    expect(out.systemCharacteristics.securitySensitivityLevel).toBe("");
+    expect(out.systemCharacteristics.systemIds).toEqual([]);
+    expect(out.systemCharacteristics.securityImpactLevel).toEqual({
+      objectiveConfidentiality: "",
+      objectiveIntegrity: "",
+      objectiveAvailability: "",
+    });
+    expect(out.systemCharacteristics.status).toEqual({ state: "", remarks: "" });
+    expect(out.systemCharacteristics.authorizationBoundary).toEqual({ description: "", diagrams: [] });
+    expect(out.systemCharacteristics.props).toEqual([]);
+
+    expect(out.systemImplementation.users).toEqual([]);
+    expect(out.systemImplementation.components).toEqual([]);
+    expect(out.systemImplementation.inventoryItems).toEqual([]);
+    expect(out.systemImplementation.leveragedAuthorizations).toEqual([]);
+
+    expect(out.controlImplementation.description).toBe("");
+    expect(out.controlImplementation.implementedRequirements).toEqual([]);
+
+    expect(out.backMatter).toEqual([]);
+    expect(out.importProfileHref).toBe("");
+  });
+
+  /* ─── Maximalist fixture — every truthy arm fires ─────────────────── */
+  it("preserves every field when input is fully populated", () => {
+    const raw = {
+      metadata: {
+        title: "Full SSP",
+        version: "1.2.0",
+        "oscal-version": "1.1.2",
+        "last-modified": "2026-05-14T00:00:00Z",
+        published: "2026-04-01T00:00:00Z",
+        parties: [{ uuid: "p1", name: "Acme", type: "organization" }],
+        roles: [
+          { id: "owner", title: "System Owner" },
+          { id: "no-title" },  // → title falls back to id
+        ],
+        "responsible-parties": [
+          { "role-id": "owner", "party-uuids": ["p1"] },
+          { "role-id": "auditor" },  // → party-uuids defaults to []
+        ],
+      },
+      "system-characteristics": {
+        "system-name": "ACME-001",
+        "system-name-short": "ACME",
+        description: "A system",
+        "security-sensitivity-level": "moderate",
+        "system-ids": [
+          "string-id",  // string variant
+          { id: "obj-id", "identifier-type": "https://fedramp" },  // object variant
+          {},  // object missing id → ""
+        ],
+        "security-impact-level": {
+          "security-objective-confidentiality": "moderate",
+          "security-objective-integrity": "low",
+          "security-objective-availability": "high",
+        },
+        status: { state: "operational", remarks: "all good" },
+        "authorization-boundary": { description: "boundary text" },
+        props: [{ name: "x", value: "y" }],
+      },
+      "system-implementation": {
+        users: [{
+          uuid: "u1",
+          title: "User One",
+          description: "desc",
+          "role-ids": ["owner"],
+          "authorized-privileges": [
+            { title: "Admin", "functions-performed": ["read", "write"] },
+            {},  // → defaults trigger
+          ],
+        }],
+        components: [{
+          uuid: "c1",
+          type: "software",
+          title: "Comp",
+          description: "comp desc",
+          status: { state: "operational" },
+          props: [{ name: "a", value: "b" }],
+          links: [
+            { href: "https://x", rel: "reference", text: "label" },
+            {},  // → all defaults
+          ],
+        }],
+        "inventory-items": [{
+          uuid: "ii-1",
+          description: "inv",
+          props: [{ name: "asset-type", value: "appliance" }],
+          "implemented-components": [{ "component-uuid": "c1" }],
+        }],
+        "leveraged-authorizations": [{
+          uuid: "la-1",
+          title: "AWS GovCloud",
+          "party-uuid": "p1",
+          "date-authorized": "2025-01-01",
+        }],
+      },
+      "control-implementation": {
+        description: "control impl desc",
+        "implemented-requirements": [{
+          uuid: "ir-1",
+          "control-id": "ac-1",
+          description: "ir desc",
+          remarks: "ir remarks",
+          props: [{ name: "a", value: "b" }],
+          statements: [{
+            "statement-id": "ac-1_smt.a",
+            uuid: "s1",
+            description: "stmt",
+            remarks: "stmt remarks",
+            "by-components": [{
+              "component-uuid": "c1",
+              uuid: "bc1",
+              description: "bc desc",
+              remarks: "bc remarks",
+              "implementation-status": { state: "implemented" },
+            }],
+          }],
+          "by-components": [{
+            "component-uuid": "c1",
+            uuid: "bc2",
+            description: "bc2 desc",
+            remarks: "bc2 remarks",
+            "implementation-status": { state: "planned" },
+          }],
+          "responsible-roles": [{ "role-id": "owner", "party-uuids": ["p1"] }],
+          links: [{ href: "#res-1", rel: "evidence", text: "see this" }],
+        }],
+      },
+      "back-matter": {
+        resources: [{
+          uuid: "res-1",
+          title: "Res 1",
+          description: "r desc",
+          props: [{ name: "a", value: "b" }],
+          rlinks: [{ href: "https://x/r1.pdf" }],
+        }],
+      },
+      "import-profile": { href: "https://x/profile.json" },
+    };
+
+    const out = parseSsp(raw);
+
+    expect(out.metadata.title).toBe("Full SSP");
+    expect(out.metadata.version).toBe("1.2.0");
+    expect(out.metadata.oscalVersion).toBe("1.1.2");
+    expect(out.metadata.parties).toEqual([{ uuid: "p1", name: "Acme", type: "organization" }]);
+    expect(out.metadata.roles).toEqual([
+      { id: "owner", title: "System Owner" },
+      { id: "no-title", title: "no-title" },  // fallback to id
+    ]);
+    expect(out.metadata.responsibleParties[1].partyUuids).toEqual([]);  // default-[] arm
+
+    expect(out.systemCharacteristics.systemName).toBe("ACME-001");
+    expect(out.systemCharacteristics.systemIds).toEqual([
+      { id: "string-id", identifierType: undefined },
+      { id: "obj-id", identifierType: "https://fedramp" },
+      { id: "", identifierType: undefined },  // s.id || "" arm
+    ]);
+    expect(out.systemCharacteristics.status.state).toBe("operational");
+    expect(out.systemCharacteristics.authorizationBoundary.description).toBe("boundary text");
+
+    expect(out.systemImplementation.users[0].authorizedPrivileges[1].title).toBe("");  // default arm
+    expect(out.systemImplementation.users[0].authorizedPrivileges[1].functionsPerformed).toEqual([]);
+    expect(out.systemImplementation.components[0].links[0]).toEqual({
+      href: "https://x", rel: "reference", text: "label",
+    });
+    expect(out.systemImplementation.components[0].links[1]).toEqual({
+      href: "", rel: undefined, text: undefined,  // all-defaults link
+    });
+    expect(out.systemImplementation.inventoryItems[0].implementedComponents[0].componentUuid).toBe("c1");
+    expect(out.systemImplementation.leveragedAuthorizations[0].title).toBe("AWS GovCloud");
+
+    expect(out.controlImplementation.implementedRequirements[0].statements[0].byComponents[0]
+      .implementationStatus).toBe("implemented");
+    expect(out.controlImplementation.implementedRequirements[0].byComponents[0]
+      .implementationStatus).toBe("planned");
+    expect(out.controlImplementation.implementedRequirements[0].responsibleRoles[0].roleId).toBe("owner");
+    expect(out.controlImplementation.implementedRequirements[0].links[0]).toEqual({
+      href: "#res-1", rel: "evidence", text: "see this",
+    });
+
+    expect(out.backMatter[0].title).toBe("Res 1");
+    expect(out.importProfileHref).toBe("https://x/profile.json");
+  });
+
+  /* ─── Targeted defaults that need their own row ────────────────── */
+  it("defaults link href/rel/text when missing on a component link", () => {
+    const out = parseSsp({
+      metadata: {},
+      "system-implementation": {
+        components: [{ uuid: "c1", links: [{}] }],
+      },
+    });
+    expect(out.systemImplementation.components[0].links[0]).toEqual({
+      href: "", rel: undefined, text: undefined,
+    });
+  });
+
+  it("defaults bc.implementation-status to '' when state is missing", () => {
+    const out = parseSsp({
+      metadata: {},
+      "control-implementation": {
+        "implemented-requirements": [{
+          uuid: "ir1",
+          statements: [{ "by-components": [{ "component-uuid": "c1" }] }],
+          "by-components": [{ "component-uuid": "c1" }],
+        }],
+      },
+    });
+    expect(out.controlImplementation.implementedRequirements[0].statements[0]
+      .byComponents[0].implementationStatus).toBe("");
+    expect(out.controlImplementation.implementedRequirements[0].byComponents[0]
+      .implementationStatus).toBe("");
+  });
+});
+
+/* ─── renderMarkup — markdown → HTML with bare-<p> unwrap ──────────── */
+describe("renderMarkup()", () => {
+  it("unwraps a single paragraph to inline HTML", () => {
+    expect(renderMarkup("hello")).toBe("hello");
+  });
+
+  it("preserves inline formatting inside the unwrapped paragraph", () => {
+    const out = renderMarkup("hello **world**");
+    expect(out).toContain("<strong>world</strong>");
+    expect(out.startsWith("<p>")).toBe(false);
+  });
+
+  it("does not unwrap when there are multiple paragraphs", () => {
+    const out = renderMarkup("para one\n\npara two");
+    expect(out).toContain("<p>para one</p>");
+    expect(out).toContain("<p>para two</p>");
+    expect(out.startsWith("<p>")).toBe(true);
+    expect(out.endsWith("</p>")).toBe(true);
+  });
+
+  it("does not unwrap non-paragraph block elements (e.g. lists)", () => {
+    const out = renderMarkup("- item one\n- item two");
+    expect(out).toContain("<ul>");
+    expect(out).toContain("<li>item one</li>");
+    expect(out.startsWith("<p>")).toBe(false);
+  });
+
+  it("returns an empty string for empty input", () => {
+    expect(renderMarkup("")).toBe("");
   });
 });
