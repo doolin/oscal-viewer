@@ -88,6 +88,21 @@ Organised into three buckets:
 
 ### Chain resolver fragility
 
+- **BUG (lock-in PR landed; impl fix pending):** `useImportResolver`'s
+  `isRlinkSupported` and `checkUrlFormat` do not reject `.zip` files
+  or `*+zip` media-types. Real-world repro: NIST SSP samples reference
+  the OSCAL content catalog via a back-matter resource whose only rlink
+  is `https://github.com/usnistgov/oscal-content/.../v1.3.0.zip` with
+  `media-type: "application/oscal.catalog+zip"`. The chain resolver
+  accepts that URL, attempts to fetch ~50MB of ZIP, and the resolver
+  modal hangs on "Resolving Catalog…" until the 10-second
+  AbortController timeout fires. **Fix candidates** (one or both):
+  add `.zip` to `UNSUPPORTED_EXTENSIONS` (`useImportResolver.ts:42`),
+  and add `mt.includes("zip")` to `isRlinkSupported`
+  (`useImportResolver.ts:63-73`). The BUG: lock-in tests in
+  `useImportResolver.test.ts` ("BUG: checkUrlFormat() accepts ZIP
+  URLs" and "BUG: resolveHref() accepts ZIP rlinks") assert the
+  current buggy behavior; flip those assertions when the fix lands.
 - `useChainResolver` cancels the whole chain on the first step's
   error. Intentional, but worth knowing — one bad hop means nothing
   upstream of it loads.

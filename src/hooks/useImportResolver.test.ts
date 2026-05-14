@@ -125,6 +125,124 @@ describe("resolveHref()", () => {
 });
 
 /* ═════════════════════════════════════════════════════════════════════
+   BUG: ZIP-archive rlinks/URLs are NOT rejected pre-flight
+
+   Real-world repro (2026-05-14): NIST SSP samples reference the OSCAL
+   content catalog via a back-matter resource whose only rlink is
+
+       { href: "https://github.com/usnistgov/oscal-content/.../v1.3.0.zip",
+         "media-type": "application/oscal.catalog+zip" }
+
+   The chain resolver accepts that URL, attempts to fetch ~50MB of ZIP
+   from GitHub, and the user sees the resolver modal stuck on
+   "Resolving Catalog…" until the 10-second AbortController timeout
+   fires.
+
+   The root cause is two-fold:
+   1. `UNSUPPORTED_EXTENSIONS` (useImportResolver.ts:42) lists xml/yaml/
+      html/htm but not `.zip`, so `checkUrlFormat` returns null (no
+      error) for `.zip` URLs.
+   2. `isRlinkSupported` (useImportResolver.ts:63-73) checks media-types
+      for "xml"/"html"/"json"/"yaml" but not "zip", so a `+zip` media-
+      type falls through the extension check (also missing `.zip`) and
+      ends up "supported".
+
+   These tests LOCK IN the buggy behavior so the eventual fix's PR can
+   flip these assertions in one mechanical edit. The fix is:
+   - Add `.zip` to UNSUPPORTED_EXTENSIONS.
+   - Add `mt.includes("zip")` to `isRlinkSupported` (returns false).
+   When that lands:
+   - `checkUrlFormat("...zip")` will return a "not JSON" error string.
+   - `resolveHref("#r-zip", [zipResource])` will return formatError
+     instead of url.
+
+   See `.development/plans/quirks.md` for the broader catalog of
+   shape-of-data assumptions.
+   ═════════════════════════════════════════════════════════════════════ */
+
+describe("BUG: checkUrlFormat() accepts ZIP URLs", () => {
+  it("returns null (no formatError) for a `.zip` URL — should flip to /not JSON/ after fix", () => {
+    expect(
+      checkUrlFormat("https://github.com/usnistgov/oscal-content/archive/refs/tags/v1.3.0.zip"),
+    ).toBeNull();
+  });
+
+  it("returns null for `.ZIP` uppercase — should flip after fix (extension check is case-insensitive via toLowerCase)", () => {
+    expect(checkUrlFormat("https://example.com/catalog.ZIP")).toBeNull();
+  });
+
+  it("returns null for a plain `.zip` URL — should flip after fix", () => {
+    expect(checkUrlFormat("https://example.com/cat.zip")).toBeNull();
+  });
+});
+
+describe("BUG: resolveHref() accepts ZIP rlinks", () => {
+  const zipResource: BackMatterResource = {
+    uuid: "r-zip",
+    title: "NIST oscal-content ZIP archive",
+    rlinks: [
+      {
+        href: "https://github.com/usnistgov/oscal-content/archive/refs/tags/v1.3.0.zip",
+        "media-type": "application/oscal.catalog+zip",
+      },
+    ],
+  };
+  const zipOnlyAlternateMtResource: BackMatterResource = {
+    uuid: "r-zip-alt",
+    title: "Plain application/zip archive",
+    rlinks: [
+      { href: "https://example.com/catalog.zip", "media-type": "application/zip" },
+    ],
+  };
+  const zipMixedResource: BackMatterResource = {
+    uuid: "r-zip-mixed",
+    rlinks: [
+      // The XML rlink alone would be rejected, but the ZIP slips through
+      // and is preferred because `isRlinkSupported` accepts it before the
+      // XML rlink is reached. Demonstrates how a JSON-less catalog
+      // resource passes the supported-rlink check despite having no JSON.
+      { href: "https://example.com/cat.xml", "media-type": "application/xml" },
+      { href: "https://example.com/cat.zip", "media-type": "application/oscal.catalog+zip" },
+    ],
+  };
+
+  it("returns the ZIP URL as if supported — should flip to formatError after fix", () => {
+    const out = resolveHref("#r-zip", [zipResource]);
+    expect(out.url).toBe(
+      "https://github.com/usnistgov/oscal-content/archive/refs/tags/v1.3.0.zip",
+    );
+    expect(out.formatError).toBeNull();
+  });
+
+  it("returns a plain `application/zip` URL as supported — should flip after fix", () => {
+    const out = resolveHref("#r-zip-alt", [zipOnlyAlternateMtResource]);
+    expect(out.url).toBe("https://example.com/catalog.zip");
+    expect(out.formatError).toBeNull();
+  });
+
+  it("picks the ZIP rlink over an XML rlink in a mixed resource — should flip after fix (both unsupported → formatError)", () => {
+    const out = resolveHref("#r-zip-mixed", [zipMixedResource]);
+    // Buggy: ZIP is accepted as "supported"; XML alone would have
+    // produced a formatError, but the ZIP rlink masks that.
+    expect(out.url).toBe("https://example.com/cat.zip");
+    expect(out.formatError).toBeNull();
+  });
+
+  it("does not produce a formatError when every rlink is some flavor of ZIP — should flip after fix", () => {
+    const allZipsResource: BackMatterResource = {
+      uuid: "r-all-zips",
+      rlinks: [
+        { href: "https://example.com/a.zip", "media-type": "application/zip" },
+        { href: "https://example.com/b.zip", "media-type": "application/oscal.profile+zip" },
+      ],
+    };
+    const out = resolveHref("#r-all-zips", [allZipsResource]);
+    expect(out.formatError).toBeNull();
+    expect(out.url).toBe("https://example.com/a.zip");
+  });
+});
+
+/* ═════════════════════════════════════════════════════════════════════
    Hook body
    ═════════════════════════════════════════════════════════════════════ */
 
