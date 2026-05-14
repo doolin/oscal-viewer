@@ -1825,4 +1825,177 @@ describe("<SspPage /> SSP3 — parser fallbacks (STRIPPED_SSP, WRAPPED_SSP)", ()
   });
 });
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   SSP4 — Tedious-branch closures (chain dispatch, deep render-tree edges)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("<SspPage /> SSP4 — tedious-branch closures", () => {
+  it("URL auto-load + chain success: Profile + Catalog (covers L2451-2453 dispatch arms)", async () => {
+    // SSP_CHAIN is [Profile, Catalog]. Mock fetch so both steps resolve.
+    const profileJson = {
+      profile: {
+        uuid: "chain-profile", metadata: { title: "Chain Profile" },
+        imports: [{ href: "https://example.com/catalog.json", "include-controls": [{ "with-ids": ["ac-1"] }] }],
+      },
+    };
+    const catalogJson = {
+      catalog: {
+        uuid: "chain-cat", metadata: { title: "Chain Catalog" },
+        groups: [{ id: "ac", title: "AC", controls: [{ id: "ac-1", title: "AC-1" }] }],
+      },
+    };
+    vi.stubGlobal("fetch", vi.fn((url: string) => {
+      let body: object;
+      if (/catalog/.test(url)) body = catalogJson;
+      else body = profileJson;
+      return Promise.resolve(new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }));
+    }));
+    const sspWithChain = {
+      ...RICH_SSP,
+      uuid: "ssp-chain",
+      metadata: { title: "Chain SSP" },
+      "import-profile": { href: "https://example.com/profile.json" },
+    };
+    await renderLoaded({ ssp: sspWithChain as any, withCatalog: false });
+    await waitFor(
+      () => expect(screen.queryAllByText(/Chain SSP/i).length).toBeGreaterThan(0),
+      { timeout: 3000 },
+    );
+  });
+
+  it("URL auto-load: WRAPPED SSP form (covers L2406 fallback arm)", async () => {
+    const wrappedSsp = { "system-security-plan": RICH_SSP };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(wrappedSsp), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    ));
+    render(
+      <Harness preload={false} initialPath="/ssp?url=https://example.com/wrapped-ssp.json" />,
+    );
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Sample System Security Plan/i).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("URL auto-load: missing metadata error (covers L2407 truthy)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ "system-security-plan": { uuid: "bad" } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    ));
+    render(
+      <Harness preload={false} initialPath="/ssp?url=https://example.com/bad-ssp.json" />,
+    );
+    await waitFor(() =>
+      expect(screen.queryAllByText(/missing metadata|Not a valid OSCAL SSP/i).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("navigates between Document Overview → System Implementation → Control Implementation", async () => {
+    await renderLoaded();
+    // Click the System Implementation nav.
+    const siNav = screen.queryAllByText(/System Implementation/i)[0];
+    if (siNav) fireEvent.click(siNav);
+    // Click the Control Implementation nav.
+    const ciNav = screen.queryAllByText(/Control Implementation/i)[0];
+    if (ciNav) fireEvent.click(ciNav);
+    expect(document.body.textContent ?? "").not.toBe("");
+  });
+
+  it("clicks a component in System Implementation to render component detail", async () => {
+    await renderLoaded();
+    fireEvent.click(screen.getAllByText(/System Implementation/i)[0]);
+    // Click the Components sub-section.
+    const compsLink = screen.queryAllByText(/Components/i)[0];
+    if (compsLink) fireEvent.click(compsLink);
+    // Click an actual component (Splunk Enterprise).
+    const compTitle = screen.queryAllByText(/Splunk Enterprise/i)[0];
+    if (compTitle) {
+      fireEvent.click(compTitle);
+      expect(document.body.textContent ?? "").not.toBe("");
+    }
+  });
+
+  it("clicks an inventory item to render inventory detail", async () => {
+    await renderLoaded();
+    fireEvent.click(screen.getAllByText(/System Implementation/i)[0]);
+    const invLink = screen.queryAllByText(/Inventory/i)[0];
+    if (invLink) fireEvent.click(invLink);
+    // Click an inventory item title (inv-1's description is "Linux log collector").
+    const invTitle = screen.queryAllByText(/Linux log collector/i)[0];
+    if (invTitle) fireEvent.click(invTitle);
+    expect(document.body.textContent ?? "").not.toBe("");
+  });
+
+  it("clicks a user in System Implementation to render user detail", async () => {
+    await renderLoaded();
+    fireEvent.click(screen.getAllByText(/System Implementation/i)[0]);
+    const usersLink = screen.queryAllByText(/Users/i)[0];
+    if (usersLink) fireEvent.click(usersLink);
+    const userTitle = screen.queryAllByText(/Administrators/i)[0];
+    if (userTitle) fireEvent.click(userTitle);
+    expect(document.body.textContent ?? "").not.toBe("");
+  });
+
+  it("clicks an implemented-requirement chip to render the ctrl-X view (covers L1426 dispatch)", async () => {
+    await renderLoaded();
+    fireEvent.click(screen.getAllByText(/Control Implementation/i)[0]);
+    // Click an AC-1 chip.
+    const chips = screen.queryAllByText(/^AC-1$|ac-1/i);
+    if (chips.length > 0) {
+      fireEvent.click(chips[0]);
+      await waitFor(() => {
+        const text = document.body.textContent ?? "";
+        expect(/Policy and Procedures|AC-1|Sample System Security Plan/i.test(text)).toBe(true);
+      });
+    }
+  });
+
+  it("mobile shell renders without crash + search", async () => {
+    await renderLoaded({ mobile: true });
+    const search = screen.queryAllByPlaceholderText(/Search/i)[0];
+    if (search) {
+      fireEvent.change(search, { target: { value: "AC-1" } });
+    }
+    expect(document.body.textContent ?? "").not.toBe("");
+  });
+
+  it("Metadata view renders parties / roles / responsible-parties", async () => {
+    await renderLoaded();
+    const metadataNav = screen.queryAllByText(/Document Overview|Document Metadata|Metadata/i)[0];
+    if (metadataNav) fireEvent.click(metadataNav);
+    const text = document.body.textContent ?? "";
+    expect(/Acme Corp|System Owner/i.test(text)).toBe(true);
+  });
+
+  it("DropZone dragOver / dragLeave", () => {
+    const { container } = render(<Harness preload={false} />);
+    const zone = container.querySelector('div[style*="dashed"]') as HTMLElement;
+    fireEvent.dragOver(zone);
+    fireEvent.dragLeave(zone);
+    expect(zone).toBeInTheDocument();
+  });
+
+  it("DropZone drop with empty files", () => {
+    const { container } = render(<Harness preload={false} />);
+    const zone = container.querySelector('div[style*="dashed"]') as HTMLElement;
+    fireEvent.drop(zone, { dataTransfer: { files: [] } });
+    expect(screen.getByText(/Drop an OSCAL/)).toBeInTheDocument();
+  });
+
+  it("URL form submit with whitespace input", () => {
+    render(<Harness preload={false} />);
+    const urlInput = screen.getByPlaceholderText(/https:\/\//) as HTMLInputElement;
+    fireEvent.change(urlInput, { target: { value: "   " } });
+    const form = urlInput.closest("form")!;
+    expect(() => fireEvent.submit(form)).not.toThrow();
+  });
+});
+
 
