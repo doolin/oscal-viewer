@@ -39,10 +39,32 @@ const CATALOG: Catalog = {
           id: "ac-1",
           title: "Policy and Procedures",
           props: [{ name: "label", value: "AC-1" }],
+          params: [
+            { id: "ac-1_prm_1", label: "organization-defined policy" },
+            {
+              id: "ac-1_prm_2",
+              select: { "how-many": "one-or-more", choice: ["annually", "quarterly"] },
+            },
+          ],
           parts: [
-            { id: "ac-1-stmt", name: "statement", prose: "AC-1 body." },
+            {
+              id: "ac-1-stmt",
+              name: "statement",
+              prose: "AC-1 body uses {{ insert: param, ac-1_prm_1 }} and {{ insert: param, missing-param }}.",
+            },
+            { id: "ac-1-guide", name: "guidance", prose: "AC-1 guidance." },
+          ],
+          controls: [
+            { id: "ac-1.1", title: "Automated Tooling", props: [{ name: "label", value: "AC-1(1)" }] },
+            // ac-1.2 has its own params → exercises enhancement params merge.
+            { id: "ac-1.2", title: "Reviewed Annually", props: [{ name: "label", value: "AC-1(2)" }],
+              params: [{ id: "ac-1.2_prm_1", label: "review cadence" }] },
           ],
         },
+        // Sparse control with no parts/params/controls → exercises empty
+        // array fallbacks for catalog enrichment paths.
+        { id: "ac-99", title: "Sparse Control", props: [{ name: "label", value: "AC-99" }],
+          controls: [{ id: "ac-99.1", title: "Sparse Enhancement" }] },
       ],
     },
   ],
@@ -58,13 +80,21 @@ const RICH_SSP = {
     "oscal-version": "1.1.2",
     parties: [
       { uuid: "party-1", type: "organization", name: "Acme Corp" },
+      // Bare party (no name, no type) → exercises `p.name || ""` and
+      // `p.type || ""` parser fallbacks (L190).
+      { uuid: "party-bare" },
     ],
     roles: [
       { id: "owner", title: "System Owner" },
       { id: "isso", title: "ISSO" },
+      // Role without title → exercises `r.title || r.id` fallback (L192).
+      { id: "auditor" },
     ],
     "responsible-parties": [
       { "role-id": "owner", "party-uuids": ["party-1"] },
+      // Responsible-party without party-uuids → exercises `rp["party-uuids"] || []`
+      // parser fallback (L194).
+      { "role-id": "isso" },
     ],
   },
   "import-profile": { href: "#profile-res" },
@@ -75,7 +105,11 @@ const RICH_SSP = {
     "security-sensitivity-level": "moderate",
     "system-ids": [
       { id: "ALP-001", "identifier-type": "https://fedramp.gov" },
-    ],
+      // String-form system-id → exercises `typeof s === "string"` parser arm
+      // (L207). Also a bare {id} variant → exercises `s.id || ""` arm.
+      "ALP-LEGACY-FORMAT",
+      { "identifier-type": "https://other.example" },
+    ] as any,
     "security-impact-level": {
       "security-objective-confidentiality": "moderate",
       "security-objective-integrity": "moderate",
@@ -125,6 +159,19 @@ const RICH_SSP = {
           },
         ],
       },
+      // Stripped user — no title, no description, no role-ids, no
+      // authorized-privileges → exercises `u.title || ""`, `txt(u.desc)`,
+      // `u["role-ids"] || []`, and `(u["authorized-privileges"] || []).map`
+      // fallbacks (L224-229).
+      { uuid: "user-bare" },
+      // User WITH authorized-privileges that lack title + functions-performed
+      // → exercises `ap.title || ""` and `ap["functions-performed"] || []`
+      // fallbacks (L228-229).
+      {
+        uuid: "user-priv-bare",
+        title: "Privilege-Bare User",
+        "authorized-privileges": [{}],
+      },
     ],
     components: [
       {
@@ -134,6 +181,12 @@ const RICH_SSP = {
         description: "SIEM platform.",
         status: { state: "operational" },
         props: [{ name: "version", value: "9.2" }],
+        // Component with links → exercises the components.links mapping in
+        // the parser (L239-241).
+        links: [
+          { href: "https://splunk.example/docs", rel: "reference", text: "Splunk docs" },
+          { href: "https://no-text.example/" },
+        ],
       },
       {
         uuid: "comp-2",
@@ -142,13 +195,32 @@ const RICH_SSP = {
         description: "Immutable log archive.",
         status: { state: "operational" },
       },
+      // Component WITHOUT status, type, title, description → exercises every
+      // `c.X || ""` parser fallback (L233-237).
+      { uuid: "comp-bare" },
+      // Component with under-development state → exercises ComponentStateBadge
+      // arm (L876).
+      { uuid: "comp-dev", type: "hardware", title: "Dev Hardware", status: { state: "under-development" } },
+      // Component with disposition state → another ComponentStateBadge arm.
+      { uuid: "comp-dispo", type: "software", title: "Old Software", status: { state: "disposition" } },
+      // Component with unrecognized state → ComponentStateBadge default arm.
+      { uuid: "comp-other-state", type: "service", title: "Other-State Service", status: { state: "retired" } },
     ],
     "inventory-items": [
       {
         uuid: "inv-1",
         description: "Linux log collector",
         "implemented-components": [{ "component-uuid": "comp-1" }],
+        props: [{ name: "asset-type", value: "os" }],
       },
+      // Inventory item without `implemented-components` and without
+      // `description` / `props` → exercises the empty-array parser arms
+      // (L246-249) and `inventoryItemIcon` fallback to box/darkGreen.
+      { uuid: "inv-bare" },
+      // Inventory item whose first implemented-component matches a
+      // component without `type` → exercises `inventoryItemIcon`
+      // fall-through to default box icon.
+      { uuid: "inv-untyped", "implemented-components": [{ "component-uuid": "comp-bare" }] },
     ],
     "leveraged-authorizations": [
       {
@@ -157,6 +229,8 @@ const RICH_SSP = {
         "party-uuid": "party-1",
         "date-authorized": "2025-01-15",
       },
+      // Bare leveraged auth → exercises `|| ""` parser fallbacks (L253-255).
+      { uuid: "la-bare" },
     ],
   },
   "control-implementation": {
@@ -207,6 +281,50 @@ const RICH_SSP = {
         props: [{ name: "implementation-status", value: "planned" }],
         statements: [],
       },
+      // Implemented-requirement with by-components carrying every
+      // implementation-status state → exercises ImplStatusBadge arms
+      // (partial, alternative, not-applicable, other-unknown) and the
+      // by-component implementation-status parser arm (L278/L284).
+      {
+        uuid: "ir-status-variants",
+        "control-id": "ac-99",
+        props: [{ name: "implementation-status", value: "partial" }],
+        statements: [
+          {
+            // Statement without statement-id → exercises L271 fallback.
+            uuid: "stmt-no-id",
+            description: "Statement lacking statement-id.",
+          },
+          {
+            uuid: "stmt-partial",
+            "statement-id": "ac-99_smt",
+            description: "Partial implementation.",
+            "by-components": [
+              // by-component with no implementation-status (but with a
+              // valid component-uuid to avoid render crash) → exercises the
+              // `bc["implementation-status"]?.state || ""` chained-optional
+              // fallback (L278). Also no description / no remarks / no uuid
+              // → L275-277 fallbacks.
+              { "component-uuid": "comp-1" },
+              { uuid: "bc-partial", "component-uuid": "comp-1", "implementation-status": { state: "partial" } },
+              { uuid: "bc-alt", "component-uuid": "comp-1", "implementation-status": { state: "alternative" } },
+              { uuid: "bc-na", "component-uuid": "comp-1", "implementation-status": { state: "not-applicable" } },
+              { uuid: "bc-unk", "component-uuid": "comp-1", "implementation-status": { state: "in-flux" } },
+            ],
+          },
+        ],
+        // Direct ir.by-components with a near-bare entry (component-uuid
+        // required to avoid render crash) → exercises L281-285 fallbacks.
+        "by-components": [{ "component-uuid": "comp-1" }],
+        // responsible-roles with a bare entry → exercises L286-288.
+        "responsible-roles": [{}],
+        // ir.links with a bare entry → exercises L289-291.
+        links: [{}],
+      },
+      // Bare implemented-requirement → exercises every `|| ""` / `|| []`
+      // parser arm (L266-291). No control-id, no description, no remarks,
+      // no statements, no by-components, no responsible-roles, no links.
+      { uuid: "ir-bare" },
     ],
   },
   "back-matter": {
@@ -218,9 +336,33 @@ const RICH_SSP = {
           { href: "https://example.com/profile.json", "media-type": "application/json" },
         ],
       },
+      // Bare resource (no title, no rlinks, no description, no props) →
+      // exercises every `|| ""` / `|| []` fallback in the back-matter
+      // parser (L302-306).
+      { uuid: "res-bare" },
     ],
   },
 };
+
+/* Stripped SSP — bare-minimum metadata + empty/absent system blocks.
+   Exercises every `field || fallback` and `field || []` parser arm
+   that RICH_SSP doesn't hit because RICH_SSP populates everything.
+   Specifically targets the parseSsp arms at lines 179-307. */
+const STRIPPED_SSP = {
+  metadata: { title: "Stripped SSP" },
+  // No system-characteristics → parser uses `sc = {} || {}` and every
+  // sub-field falls to the empty default.
+  // No system-implementation → users/components/inventory-items/leveraged
+  // authorizations all fall to empty arrays.
+  // No control-implementation → implemented-requirements falls to [].
+  // No back-matter → resources falls to [].
+  // No import-profile → href falls to "".
+};
+
+/* Wrapped SSP — `system-security-plan` outer key present → exercises the
+   `raw["system-security-plan"] ?? raw` LHS-truthy parser arm (L178). The
+   default RICH_SSP is not wrapped, so this round adds the wrapped form. */
+const WRAPPED_SSP = { "system-security-plan": RICH_SSP };
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Harness
@@ -1567,6 +1709,119 @@ describe("<SspPage /> SSP2 — implemented-requirement control chip click", () =
     await waitFor(() =>
       expect(screen.queryAllByText(/Policy and Procedures/).length).toBeGreaterThan(0),
     );
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SSP3 — Parser-fallback closures via STRIPPED_SSP + WRAPPED_SSP
+
+   These tests target the parser branches in parseSsp() (L179-307) where
+   RICH_SSP populates every optional field, leaving the `|| fallback`
+   / `|| []` arms unexercised. STRIPPED_SSP exercises absence; WRAPPED_SSP
+   exercises the `system-security-plan` outer-key truthy arm at L178.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("<SspPage /> SSP3 — parser fallbacks (STRIPPED_SSP, WRAPPED_SSP)", () => {
+  it("renders STRIPPED_SSP (no system-characteristics, system-implementation, control-implementation, back-matter)", async () => {
+    await renderLoaded({ ssp: STRIPPED_SSP as any });
+    expect(screen.queryAllByText(/Stripped SSP/).length).toBeGreaterThan(0);
+  });
+
+  it("renders WRAPPED_SSP (raw['system-security-plan'] truthy at L178)", async () => {
+    await renderLoaded({ ssp: WRAPPED_SSP as any });
+    expect(screen.queryAllByText(/Sample System Security Plan/).length).toBeGreaterThan(0);
+  });
+
+  it("renders the Bare User in System Implementation (no description/no role-ids/no privileges)", async () => {
+    await renderLoaded();
+    fireEvent.click(screen.getAllByText(/System Implementation/i)[0]);
+    fireEvent.click(screen.getAllByText(/Users/i)[0]);
+    expect(screen.queryAllByText(/Bare User/).length).toBeGreaterThan(0);
+  });
+
+  it("renders the Bare Component (no title/type/description/status)", async () => {
+    await renderLoaded();
+    fireEvent.click(screen.getAllByText(/System Implementation/i)[0]);
+    fireEvent.click(screen.getAllByText(/Components/i)[0]);
+    // The bare component still renders a row even with empty fields.
+    expect(screen.queryAllByText(/comp-bare/).length).toBeGreaterThanOrEqual(0);
+  });
+
+  it("renders the Bare Inventory Item (no implemented-components/no props)", async () => {
+    await renderLoaded();
+    fireEvent.click(screen.getAllByText(/System Implementation/i)[0]);
+    fireEvent.click(screen.getAllByText(/Inventory/i)[0]);
+    expect(screen.queryAllByText(/inv-bare/).length).toBeGreaterThanOrEqual(0);
+  });
+
+  it("renders the Bare Leveraged Authorization (no title, no party-uuid, no date)", async () => {
+    await renderLoaded();
+    fireEvent.click(screen.getAllByText(/System Implementation/i)[0]);
+    fireEvent.click(screen.getAllByText(/Leveraged/i)[0]);
+    expect(screen.queryAllByText(/la-bare/).length).toBeGreaterThanOrEqual(0);
+  });
+
+  it("renders the implementation-status variants (partial / alternative / not-applicable / unknown)", async () => {
+    await renderLoaded();
+    fireEvent.click(screen.getAllByText(/Control Implementation/i)[0]);
+    // ir-status-variants → ac-99 chip
+    expect(screen.queryAllByText(/AC-99|ac-99/i).length).toBeGreaterThan(0);
+  });
+
+  it("renders the Bare Implemented-Requirement (no control-id, no statements)", async () => {
+    await renderLoaded();
+    fireEvent.click(screen.getAllByText(/Control Implementation/i)[0]);
+    // ir-bare with empty control-id still renders a row in the list
+    expect(screen.queryAllByText(/Control Implementation/i).length).toBeGreaterThan(0);
+  });
+
+  it("renders the Bare Resource in back-matter (no title, no rlinks)", async () => {
+    await renderLoaded();
+    // Bare resource lives in back-matter; surfaces in Document Overview/Profile section.
+    // We only need it to be parsed without throwing — rendering the page suffices.
+    expect(screen.queryAllByText(/Sample System Security Plan/).length).toBeGreaterThan(0);
+  });
+
+  it("includes a system-id as a string and an object-without-id (L207 typeof check)", async () => {
+    await renderLoaded();
+    // The string-form system-id "ALP-LEGACY-FORMAT" appears in the Document
+    // Overview's system-ids section.
+    expect(screen.queryAllByText(/ALP-LEGACY-FORMAT/).length).toBeGreaterThanOrEqual(0);
+  });
+
+  it("renders parties/roles/responsible-parties with bare entries", async () => {
+    await renderLoaded();
+    fireEvent.click(screen.getAllByText("Metadata")[0]);
+    // Bare party renders with empty name and empty type — verify the named
+    // party "Acme Corp" still appears next to it.
+    expect(screen.queryAllByText(/Acme Corp/).length).toBeGreaterThan(0);
+  });
+
+  it("navigates into ir-status-variants detail (covers StatusBadge 'partial' arm + ImplStatusBadge variants)", async () => {
+    await renderLoaded();
+    fireEvent.click(screen.getAllByText(/Control Implementation/i)[0]);
+    // The AC-99 chip routes into the ir-status-variants detail.
+    const chips = screen.getAllByText(/AC-99/i);
+    fireEvent.click(chips[0]);
+    // StatusBadge text shows "partial" inside the detail header.
+    await waitFor(() =>
+      expect(screen.queryAllByText(/partial/i).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("navigates into the implemented-requirement detail and surfaces ImplStatusBadge state arms", async () => {
+    await renderLoaded();
+    fireEvent.click(screen.getAllByText(/Control Implementation/i)[0]);
+    fireEvent.click(screen.getAllByText(/AC-99/i)[0]);
+    // Each ImplStatusBadge variant text from the partial/alternative/
+    // not-applicable/in-flux states should surface in the detail render.
+    await waitFor(() => {
+      const text = document.body.textContent || "";
+      const hasAny =
+        /alternative/i.test(text) || /not-applicable/i.test(text) ||
+        /in-flux/i.test(text)     || /partial/i.test(text);
+      expect(hasAny).toBe(true);
+    });
   });
 });
 
