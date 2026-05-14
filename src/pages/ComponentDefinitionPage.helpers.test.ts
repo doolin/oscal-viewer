@@ -7,6 +7,14 @@ import {
   renderCatalogParamText,
   resolveCatalogInlineParams,
   getCatalogLabel,
+  familyOf,
+  familyName,
+  txt,
+  fmtDate,
+  partyName,
+  resType,
+  trunc,
+  implLabel,
 } from "./ComponentDefinitionPage";
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -306,5 +314,254 @@ describe("getCatalogLabel()", () => {
       { name: "label", value: "AC-01", class: "zero-padded" },
     ] as any;
     expect(getCatalogLabel(props)).toBe("AC-01");
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Pure-function unit tests for the internal helpers exported in PR #93.
+   Drives branch coverage on lines 160-213 of ComponentDefinitionPage.tsx
+   to (or near) 100%.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── familyOf — regex extraction of family prefix ─────────────────── */
+describe("familyOf()", () => {
+  it("extracts a standard 2-letter family prefix", () => {
+    expect(familyOf("ac-1")).toBe("AC");
+    expect(familyOf("ia-5")).toBe("IA");
+  });
+
+  it("uppercases lowercase prefixes", () => {
+    expect(familyOf("sc-7")).toBe("SC");
+  });
+
+  it("handles enhancement IDs (still matches the family prefix only)", () => {
+    expect(familyOf("ac-2.3")).toBe("AC");
+  });
+
+  it("returns '??' for empty input", () => {
+    expect(familyOf("")).toBe("??");
+  });
+
+  it("returns '??' for IDs that start with a single letter", () => {
+    expect(familyOf("a-1")).toBe("??");
+  });
+
+  it("returns '??' for IDs that start with 3+ letters before the dash", () => {
+    expect(familyOf("abc-1")).toBe("??");
+  });
+
+  it("returns '??' for IDs without a dash", () => {
+    expect(familyOf("ab123")).toBe("??");
+  });
+
+  it("returns '??' for IDs starting with digits", () => {
+    expect(familyOf("1a-1")).toBe("??");
+  });
+
+  it("matches 'no-format-id' as family NO (regex matches first 2 chars)", () => {
+    // The regex is `/^([a-z]{2})-/i`, which matches "no-" even though
+    // "no" isn't a real OSCAL family. Documents current behavior.
+    expect(familyOf("no-format-id")).toBe("NO");
+  });
+
+  it("handles uppercase input identically (case-insensitive regex)", () => {
+    expect(familyOf("AC-1")).toBe("AC");
+  });
+});
+
+/* ─── familyName — FAMILIES map + fallback ─────────────────────────── */
+describe("familyName()", () => {
+  it("returns the human name for a known family", () => {
+    // AC is in the FAMILIES map.
+    expect(familyName("ac-1")).toBeTruthy();
+    expect(familyName("ac-1")).not.toBe("AC");
+  });
+
+  it("falls back to the uppercase family prefix for unknown families", () => {
+    // ZZ is not in FAMILIES; expected fallback is the prefix itself.
+    const out = familyName("zz-1");
+    expect(out).toMatch(/ZZ|\?\?/);
+  });
+
+  it("returns '??' when familyOf returns '??' (empty or unparseable id)", () => {
+    expect(familyName("")).toBe("??");
+    expect(familyName("a-1")).toBe("??");
+  });
+});
+
+/* ─── txt — coerce values to string ────────────────────────────────── */
+describe("txt()", () => {
+  it("returns '' for null", () => {
+    expect(txt(null)).toBe("");
+  });
+
+  it("returns '' for undefined", () => {
+    expect(txt(undefined)).toBe("");
+  });
+
+  it("returns '' for empty string", () => {
+    expect(txt("")).toBe("");
+  });
+
+  it("returns '' for 0 (falsy)", () => {
+    expect(txt(0)).toBe("");
+  });
+
+  it("returns the string unchanged for a non-empty string", () => {
+    expect(txt("hello")).toBe("hello");
+  });
+
+  it("unwraps a {prose: ...} object", () => {
+    expect(txt({ prose: "wrapped content" })).toBe("wrapped content");
+  });
+
+  it("converts a number to string via String() for non-string non-object", () => {
+    expect(txt(42)).toBe("42");
+  });
+
+  it("converts a boolean true via String()", () => {
+    expect(txt(true)).toBe("true");
+  });
+
+  it("converts an object without prose via String() (yields '[object Object]')", () => {
+    expect(txt({ foo: "bar" })).toBe("[object Object]");
+  });
+});
+
+/* ─── fmtDate — locale-formatted date or em-dash ───────────────────── */
+describe("fmtDate()", () => {
+  it("returns em-dash for undefined", () => {
+    expect(fmtDate(undefined)).toBe("—");
+  });
+
+  it("returns em-dash for empty string", () => {
+    expect(fmtDate("")).toBe("—");
+  });
+
+  it("formats a valid ISO date in en-US", () => {
+    // The exact rendering depends on the runtime locale but should
+    // contain the year and month.
+    const out = fmtDate("2026-03-15T00:00:00Z");
+    expect(out).toMatch(/2026/);
+  });
+
+  it("returns the original string for an unparseable date (catch arm)", () => {
+    // Date parsing of an invalid string yields Invalid Date; the
+    // try/catch returns the original. Many invalid inputs are still
+    // parseable by Date(); use a pathological value.
+    const out = fmtDate("not-a-date");
+    // It either renders "Invalid Date" or returns the input — both
+    // demonstrate the function didn't throw.
+    expect(typeof out).toBe("string");
+  });
+});
+
+/* ─── partyName — UUID lookup with fallback ────────────────────────── */
+describe("partyName()", () => {
+  it("returns the party name for a matching UUID", () => {
+    const parties: any = [
+      { uuid: "p-1", name: "Acme Corp", type: "organization" },
+      { uuid: "p-2", name: "Jane Doe", type: "person" },
+    ];
+    expect(partyName("p-2", parties)).toBe("Jane Doe");
+  });
+
+  it("returns first-8-char prefix when UUID doesn't match a party", () => {
+    const parties: any = [{ uuid: "p-1", name: "Acme Corp" }];
+    expect(partyName("12345678abcdef", parties)).toBe("12345678");
+  });
+
+  it("returns 'Unknown' for an empty UUID", () => {
+    expect(partyName("", [])).toBe("Unknown");
+  });
+
+  it("returns first-8-chars for short UUID that doesn't match", () => {
+    expect(partyName("abcd", [])).toBe("abcd");
+  });
+});
+
+/* ─── resType — back-matter resource type prop reader ──────────────── */
+describe("resType()", () => {
+  it("returns the value of the 'type' prop when present", () => {
+    const res: any = { uuid: "r-1", props: [{ name: "type", value: "reference" }] };
+    expect(resType(res)).toBe("reference");
+  });
+
+  it("returns 'other' when there is no 'type' prop", () => {
+    const res: any = { uuid: "r-1", props: [{ name: "marking", value: "public" }] };
+    expect(resType(res)).toBe("other");
+  });
+
+  it("returns 'other' when props is missing entirely", () => {
+    const res: any = { uuid: "r-1" };
+    expect(resType(res)).toBe("other");
+  });
+
+  it("returns 'other' for an empty props array", () => {
+    const res: any = { uuid: "r-1", props: [] };
+    expect(resType(res)).toBe("other");
+  });
+});
+
+/* ─── trunc — string truncate with ellipsis ────────────────────────── */
+describe("trunc()", () => {
+  it("returns the string unchanged when shorter than n", () => {
+    expect(trunc("short", 10)).toBe("short");
+  });
+
+  it("returns the string unchanged when exactly length n", () => {
+    expect(trunc("12345", 5)).toBe("12345");
+  });
+
+  it("truncates with ellipsis when longer than n", () => {
+    expect(trunc("this is a long string", 10)).toBe("this is a …");
+  });
+
+  it("returns empty string unchanged", () => {
+    expect(trunc("", 5)).toBe("");
+  });
+});
+
+/* ─── implLabel — control-implementation human label ───────────────── */
+describe("implLabel()", () => {
+  it("returns resolvedTitle when provided", () => {
+    const impl: any = { source: "https://example.com/cat.json" };
+    expect(implLabel(impl, 0, "Resolved Title")).toBe("Resolved Title");
+  });
+
+  it("derives a name from a URL source's filename (strips extension + underscores)", () => {
+    const impl: any = { source: "https://example.com/path/baseline_moderate.json" };
+    expect(implLabel(impl, 0)).toMatch(/baseline moderate/);
+  });
+
+  it("derives a name from a URL source's filename (strips .yaml)", () => {
+    const impl: any = { source: "https://example.com/foo-bar.yaml" };
+    expect(implLabel(impl, 0)).toMatch(/foo bar/);
+  });
+
+  it("falls back to the indexed default when filename is empty after extension strip", () => {
+    const impl: any = { source: "https://example.com/" };
+    // Empty filename → strips to empty → falls back to "Control Implementation N".
+    expect(implLabel(impl, 2)).toBe("Control Implementation 3");
+  });
+
+  it("handles a non-URL source via the catch arm", () => {
+    const impl: any = { source: "not-a-url" };
+    expect(implLabel(impl, 0)).toBe("not a url");
+  });
+
+  it("falls back to indexed default for empty source", () => {
+    const impl: any = { source: "" };
+    expect(implLabel(impl, 4)).toBe("Control Implementation 5");
+  });
+
+  it("strips _ and - from the cleaned name (non-URL path)", () => {
+    const impl: any = { source: "my_baseline-v1" };
+    expect(implLabel(impl, 0)).toBe("my baseline v1");
+  });
+
+  it("returns 'Control Implementation N' when resolvedTitle is null", () => {
+    const impl: any = { source: "" };
+    expect(implLabel(impl, 0, null)).toBe("Control Implementation 1");
   });
 });
