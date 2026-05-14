@@ -173,14 +173,14 @@ export function paramToControlId(paramId: string): string {
   return prefix.replace(/(?<=-)0+(\d)/g, "$1").replace(/(?<=\.)0+(\d)/g, "$1");
 }
 
-function fmtDate(s?: string) {
+export function fmtDate(s?: string) {
   if (!s) return "—";
   try {
     return new Date(s).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
   } catch { return s; }
 }
 
-function trunc(s: string, n: number) {
+export function trunc(s: string, n: number) {
   return s.length > n ? s.slice(0, n) + "\u2026" : s;
 }
 
@@ -231,7 +231,7 @@ interface FamilyGroup {
  *
  * This allows custom catalogs with different family naming conventions to be displayed correctly.
  */
-function getFamilyNameFromCatalog(
+export function getFamilyNameFromCatalog(
   catalog: Catalog | null,
   prefix: string,
   controlIds: string[]
