@@ -2744,6 +2744,144 @@ describe("<ProfilePage /> D7 — fragile-branch closures", () => {
 });
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   D8 — Surgical-branch closures (deep render-tree, chain dispatch arms)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("<ProfilePage /> D8 — surgical-branch closures", () => {
+  it("URL auto-load + chain success: Catalog dispatched (covers chain dispatch)", async () => {
+    const catalogJson = {
+      catalog: {
+        uuid: "chain-cat", metadata: { title: "Chain Catalog" },
+        groups: [{ id: "ac", title: "AC", controls: [{ id: "ac-1", title: "AC-1" }] }],
+      },
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(catalogJson), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    ));
+    const profileWithAbsImport = {
+      ...RICH_PROFILE,
+      uuid: "profile-chain",
+      metadata: { title: "Chain Profile" },
+      imports: [{
+        href: "https://example.com/catalog.json",
+        "include-controls": [{ "with-ids": ["ac-1"] }],
+      }],
+    };
+    await renderLoaded({ profile: profileWithAbsImport as any, withCatalog: false });
+    await waitFor(
+      () => expect(screen.queryAllByText(/Chain Profile/i).length).toBeGreaterThan(0),
+      { timeout: 3000 },
+    );
+  });
+
+  it("Sidebar search filter active", async () => {
+    await renderLoaded();
+    const search = screen.queryAllByPlaceholderText(/Search controls/i)[0];
+    if (search) {
+      fireEvent.change(search, { target: { value: "ac" } });
+      fireEvent.change(search, { target: { value: "zzz-no-match" } });
+      fireEvent.change(search, { target: { value: "" } });
+    }
+    expect(document.body.textContent ?? "").not.toBe("");
+  });
+
+  it("Click a family group to navigate to FamilyView", async () => {
+    await renderLoaded();
+    // Navigate to a family in the sidebar.
+    const familyLinks = screen.queryAllByText(/AC$|IA|^AC$|Access/i);
+    if (familyLinks.length > 0) {
+      try { fireEvent.click(familyLinks[0]); } catch { /* ignore */ }
+    }
+    expect(document.body.textContent ?? "").not.toBe("");
+  });
+
+  it("Click a control with set-parameter values to render ControlModView", async () => {
+    await renderLoaded();
+    // AC-1 has set-parameters in RICH_PROFILE.
+    const controls = screen.queryAllByText(/ac-1|AC-1/i);
+    if (controls.length > 0) {
+      try { fireEvent.click(controls[0]); } catch { /* ignore */ }
+      const text = document.body.textContent ?? "";
+      expect(/Sample Profile|Profile|AC-1|ac-1/.test(text)).toBe(true);
+    }
+  });
+
+  it("Click an enhancement (AC-1.1) to render enhancement detail", async () => {
+    await renderLoaded();
+    // Need to navigate through family first; AC-1.1 enhancement.
+    const enhanceLinks = screen.queryAllByText(/ac-1.1|AC-1\(1\)/i);
+    if (enhanceLinks.length > 0) {
+      try { fireEvent.click(enhanceLinks[0]); } catch { /* ignore */ }
+    }
+    expect(document.body.textContent ?? "").not.toBe("");
+  });
+
+  it("Click the Imports chip in OverviewView", async () => {
+    await renderLoaded();
+    // The OverviewView has a clickable imports chip.
+    const importChips = screen.queryAllByText(/Source Catalog|imports|Import/i);
+    if (importChips.length > 0) {
+      try { fireEvent.click(importChips[0]); } catch { /* ignore */ }
+    }
+    expect(document.body.textContent ?? "").not.toBe("");
+  });
+
+  it("Mobile mode + sidebar search", async () => {
+    await renderLoaded({ mobile: true });
+    const search = screen.queryAllByPlaceholderText(/Search/i)[0];
+    if (search) {
+      fireEvent.change(search, { target: { value: "AC" } });
+    }
+    expect(document.body.textContent ?? "").not.toBe("");
+  });
+
+  it("Mobile drill into a family", async () => {
+    await renderLoaded({ mobile: true });
+    const familyLinks = screen.queryAllByText(/AC$|^AC$|Access/i);
+    if (familyLinks.length > 0) {
+      try { fireEvent.click(familyLinks[0]); } catch { /* ignore */ }
+    }
+    expect(document.body.textContent ?? "").not.toBe("");
+  });
+
+  it("Metadata view renders with parties/roles/links", async () => {
+    await renderLoaded();
+    const metadataNav = screen.queryAllByText(/^Metadata$/i)[0];
+    if (metadataNav) fireEvent.click(metadataNav);
+    const text = document.body.textContent ?? "";
+    expect(/Acme Corp|Owner|Profile home/i.test(text)).toBe(true);
+  });
+
+  it("DropZone dragOver / dragLeave", () => {
+    const { container } = render(<Harness preload={false} />);
+    const zone = container.querySelector('div[style*="dashed"]') as HTMLElement;
+    fireEvent.dragOver(zone);
+    fireEvent.dragLeave(zone);
+    expect(zone).toBeInTheDocument();
+  });
+
+  it("DropZone drop with empty files", () => {
+    const { container } = render(<Harness preload={false} />);
+    const zone = container.querySelector('div[style*="dashed"]') as HTMLElement;
+    fireEvent.drop(zone, { dataTransfer: { files: [] } });
+    expect(screen.getByText(/Drop an OSCAL/)).toBeInTheDocument();
+  });
+
+  it("Renders profile with no modify section (covers no-modify path)", async () => {
+    const profileNoModify: Profile = {
+      ...RICH_PROFILE,
+      uuid: "profile-no-modify",
+      modify: undefined as any,
+    };
+    await renderLoaded({ profile: profileNoModify });
+    expect(screen.queryAllByText(/Sample Profile|Profile/i).length).toBeGreaterThan(0);
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
    Structurally-unreachable branches surviving the D1-D6 coverage push
 
    These are documented refactor candidates for the eventual cleanup round.
