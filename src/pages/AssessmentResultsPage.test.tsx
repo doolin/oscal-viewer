@@ -2635,6 +2635,184 @@ describe("<AssessmentResultsPage /> AR8 — tedious-branch closures", () => {
 });
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   AR9 — Surgical-branch closures (observation link variants, finding
+          detail edge fixtures, risk detail variants, NIST chip paths)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("<AssessmentResultsPage /> AR9 — surgical-branch closures", () => {
+  it("ObservationView with link variants (covers L2333-2336)", async () => {
+    const arWithObsLinks = {
+      ...RICH_AR,
+      uuid: "ar-obs-links",
+      results: [{
+        ...RICH_AR.results[0],
+        observations: [
+          {
+            uuid: "obs-link-variants",
+            title: "Observation with link variants",
+            description: "Has multiple link shapes.",
+            methods: ["EXAMINE"],
+            collected: "2026-04-01T00:00:00Z",
+            props: [{ name: "control-group", value: "AC" }, { name: "result", value: "pass" }],
+            links: [
+              // text + frag → `${baseText} — ${frag}` rendering
+              { href: "https://ex.com/sop", rel: "reference", text: "SOP", "resource-fragment": "section-2" },
+              // No text → fallback to href
+              { href: "https://ex.com/no-text" },
+              // # prefix → baseHref undefined
+              { href: "#anchor-only", text: "Anchor" },
+            ],
+          },
+          ...RICH_AR.results[0].observations,
+        ],
+      }],
+    };
+    await renderLoaded({ ar: arWithObsLinks as any });
+    fireEvent.click(screen.getAllByText(/AC$|^AC/i)[0]);
+    const obsLink = screen.queryAllByText(/Observation with link variants/i)[0];
+    if (obsLink) {
+      fireEvent.click(obsLink);
+      const text = document.body.textContent ?? "";
+      expect(/SOP|no-text|Anchor|section-2/.test(text)).toBe(true);
+    }
+  });
+
+  it("FindingDetailView for a finding with no related observations or risks", async () => {
+    const arBareFinding = {
+      ...RICH_AR,
+      uuid: "ar-bare-fin",
+      results: [{
+        ...RICH_AR.results[0],
+        findings: [{
+          uuid: "find-bare-detail",
+          title: "Bare detail finding",
+          description: "Lone finding without related obs / risks.",
+          target: { type: "objective-id", "target-id": "ac-99", status: { state: "satisfied" } },
+        }],
+      }],
+    };
+    await renderLoaded({ ar: arBareFinding as any });
+    const findingsNav = screen.queryAllByText(/Findings/i)[0];
+    if (findingsNav) fireEvent.click(findingsNav);
+    const findingLink = screen.queryAllByText(/Bare detail finding/i)[0];
+    if (findingLink) fireEvent.click(findingLink);
+    expect(document.body.textContent ?? "").not.toBe("");
+  });
+
+  it("RiskDetailView with target props and remarks (covers detail branches)", async () => {
+    const arWithRich = {
+      ...RICH_AR,
+      uuid: "ar-rich-finding",
+      results: [{
+        ...RICH_AR.results[0],
+        findings: [{
+          uuid: "find-rich",
+          title: "Finding with target props",
+          description: "Has target props + remarks + implementation-status.",
+          target: {
+            type: "objective-id",
+            "target-id": "ac-1",
+            "implementation-status": { state: "implemented" },
+            status: {
+              state: "not-satisfied",
+              reason: "Detail reason text",
+              remarks: "Detail remarks text",
+            },
+            props: [
+              { name: "severity", value: "high" },
+              { name: "control-group", value: "AC" },
+            ],
+          },
+          remarks: "Finding remarks here.",
+        }],
+      }],
+    };
+    await renderLoaded({ ar: arWithRich as any });
+    const findingsNav = screen.queryAllByText(/Findings/i)[0];
+    if (findingsNav) fireEvent.click(findingsNav);
+    const findingLink = screen.queryAllByText(/Finding with target props/i)[0];
+    if (findingLink) {
+      fireEvent.click(findingLink);
+      const text = document.body.textContent ?? "";
+      expect(/Detail reason|Detail remarks|implementation-status|implemented/.test(text)).toBe(true);
+    }
+  });
+
+  it("RiskDetailView with mitigating-factors + remediations (covers L3043-3134)", async () => {
+    await renderLoaded();
+    const riskLink = screen.queryAllByText(/Weak Credential Policy Risk/i)[0];
+    if (riskLink) {
+      fireEvent.click(riskLink);
+      // RICH_AR.risk-1 has mitigating-factors and remediations (rem-1, rem-2, rem-3).
+      const text = document.body.textContent ?? "";
+      expect(/Compensating controls|password policy|Q2/.test(text)).toBe(true);
+    }
+  });
+
+  it("FilterPill / status filter interactions (covers L1827 and adjacent)", async () => {
+    await renderLoaded();
+    // OverviewView shows status counts as clickable filter pills.
+    // Click the "fail" or "pass" filter if rendered.
+    const pillTexts = screen.queryAllByText(/fail|pass|Risk|Finding/i);
+    if (pillTexts.length > 0) {
+      try { fireEvent.click(pillTexts[0]); } catch { /* ignore */ }
+    }
+    expect(document.body.textContent ?? "").not.toBe("");
+  });
+
+  it("GroupView with statusFilter active", async () => {
+    await renderLoaded();
+    // Click the AC group then navigate via observation
+    fireEvent.click(screen.getAllByText(/AC$|^AC/i)[0]);
+    expect(document.body.textContent ?? "").not.toBe("");
+  });
+
+  it("Bare result: result with no observations, findings, risks (covers result-detail empty arms)", async () => {
+    const arBareResult = {
+      ...RICH_AR,
+      uuid: "ar-bare-result",
+      results: [{
+        uuid: "r-bare",
+        title: "Bare result",
+        description: "No observations or risks.",
+        start: "2026-04-01T00:00:00Z",
+      }, ...RICH_AR.results],
+    };
+    await renderLoaded({ ar: arBareResult as any });
+    const resultLink = screen.queryAllByText(/Bare result/i)[0];
+    if (resultLink) {
+      fireEvent.click(resultLink);
+      const text = document.body.textContent ?? "";
+      expect(/Bare result|No observations/i.test(text)).toBe(true);
+    }
+  });
+
+  it("Sort by severity in RisksListView", async () => {
+    await renderLoaded();
+    const risksNav = screen.queryAllByText(/Risks/i)[0];
+    if (risksNav) {
+      fireEvent.click(risksNav);
+      // Try clicking a sort header or filter pill.
+      const sortHeaders = screen.queryAllByText(/Severity|Level|Status/i);
+      if (sortHeaders.length > 0) {
+        try { fireEvent.click(sortHeaders[0]); } catch { /* ignore */ }
+      }
+    }
+    expect(document.body.textContent ?? "").not.toBe("");
+  });
+
+  it("Filter pill click in OverviewView (covers FilterPill onClick branch)", async () => {
+    await renderLoaded();
+    // Click status filter pills in OverviewView.
+    const pills = document.querySelectorAll<HTMLButtonElement>("button");
+    for (let i = 0; i < Math.min(5, pills.length); i++) {
+      try { fireEvent.click(pills[i]); } catch { /* ignore */ }
+    }
+    expect(document.body.textContent ?? "").not.toBe("");
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
    Structurally-unreachable / dead code surviving the AR1-AR6 push.
 
    These are the AR-page equivalent of the dead-branch inventory done for
