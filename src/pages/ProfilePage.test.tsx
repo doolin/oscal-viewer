@@ -178,8 +178,71 @@ const RICH_PROFILE: Profile = {
         title: "Source Catalog",
         rlinks: [{ href: "https://example.com/cat.json", "media-type": "application/json" }],
       },
+      // Resource without rlinks → exercises `resource.rlinks?.[0]?.href ?? null`
+      // fallback in resolveImportHref (L204 fallback arm).
+      { uuid: "no-rlinks-res", title: "No-rlinks Resource" },
+      // Resource without title → exercises `resource.title ?? null` (L205).
+      { uuid: "no-title-res" },
     ],
   },
+};
+
+/* Stripped Profile — bare-minimum metadata, no imports, no modify,
+ * no back-matter. Exercises every `field || []` / `field ?? []` arm
+ * in the parser. */
+const STRIPPED_PROFILE: Profile = {
+  uuid: "stripped-profile",
+  metadata: { title: "Stripped Profile" },
+  imports: [],
+} as any;
+
+/* Wrapped Profile — `{ profile: {...} }` outer form → exercises the
+ * `data["profile"] ?? data` truthy arm in URL/file loaders. */
+const WRAPPED_PROFILE = { profile: RICH_PROFILE };
+
+/* Profile with non-anchor import href → exercises L199 falsy arm
+ * (href doesn't start with "#"). */
+const ABS_IMPORT_PROFILE: Profile = {
+  ...RICH_PROFILE,
+  uuid: "abs-import-profile",
+  imports: [
+    {
+      href: "https://example.com/external.json",
+      "include-controls": [{ "with-ids": ["ac-1"] }],
+    },
+  ],
+} as any;
+
+/* Profile with an import href targeting a non-existent resource → exercises
+ * the `resource` not-found arm of resolveImportHref. */
+const MISSING_RES_PROFILE: Profile = {
+  ...RICH_PROFILE,
+  uuid: "missing-res-profile",
+  imports: [
+    {
+      href: "#does-not-exist",
+      "include-controls": [{ "with-ids": ["ac-1"] }],
+    },
+  ],
+} as any;
+
+/* Profile with a long control title to fire trunc truncate arm (L184). */
+const LONG_TITLE_PROFILE_CATALOG: Catalog = {
+  uuid: "long-title-cat",
+  metadata: { title: "Long-Title Catalog" },
+  groups: [
+    {
+      id: "ac",
+      title: "Access Control with an Excessively Long Family Title That Should Trigger Truncation",
+      controls: [
+        {
+          id: "ac-1",
+          title: "Policy with an Excessively Long Title That Should Trigger the Truncation Branch",
+          props: [{ name: "label", value: "AC-1" }],
+        },
+      ],
+    },
+  ],
 };
 
 /** Preload profile + catalog (optional) into OscalProvider once. */
@@ -2601,6 +2664,82 @@ describe("<ProfilePage /> D6 — final mop-up", () => {
     expect(errBlock).toBeDefined();
     expect(() => fireEvent.click(errBlock as HTMLElement)).not.toThrow();
     expect(screen.queryAllByText(/Drop an OSCAL/).length).toBeGreaterThan(0);
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   D7 — Fragile-branch closures via STRIPPED/WRAPPED/ABS_IMPORT/MISSING_RES
+   fixtures
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("<ProfilePage /> D7 — fragile-branch closures", () => {
+  it("renders STRIPPED_PROFILE (no imports, no modify, no back-matter)", async () => {
+    await renderLoaded({ profile: STRIPPED_PROFILE });
+    expect(screen.queryAllByText(/Stripped Profile/).length).toBeGreaterThan(0);
+  });
+
+  it("URL auto-load: WRAPPED_PROFILE (raw['profile'] truthy arm)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(WRAPPED_PROFILE), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    ));
+    render(<Harness preload={false} initialPath="/profile?url=https://example.com/wrapped-profile.json" />);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Sample Profile/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("URL auto-load: Profile without metadata (covers error arm)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ profile: { uuid: "no-meta", imports: [] } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    ));
+    render(<Harness preload={false} initialPath="/profile?url=https://example.com/no-meta-profile.json" />);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Not a valid OSCAL Profile|no metadata/i).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("renders Profile with absolute import href (covers L199 falsy arm)", async () => {
+    await renderLoaded({ profile: ABS_IMPORT_PROFILE });
+    expect(screen.queryAllByText(/Sample Profile/).length).toBeGreaterThan(0);
+  });
+
+  it("renders Profile with import href pointing to missing resource (covers L207 fallback)", async () => {
+    await renderLoaded({ profile: MISSING_RES_PROFILE });
+    expect(screen.queryAllByText(/Sample Profile/).length).toBeGreaterThan(0);
+  });
+
+  it("renders with long-title catalog (covers trunc truncate-with-ellipsis arm L184)", async () => {
+    await renderLoaded({ catalog: LONG_TITLE_PROFILE_CATALOG });
+    expect(screen.queryAllByText(/Sample Profile/).length).toBeGreaterThan(0);
+  });
+
+  it("DropZone dragOver/dragLeave (covers dragging ternary truthy arms)", () => {
+    const { container } = render(<Harness preload={false} />);
+    const zone = container.querySelector('div[style*="dashed"]') as HTMLElement;
+    fireEvent.dragOver(zone);
+    fireEvent.dragLeave(zone);
+    expect(zone).toBeInTheDocument();
+  });
+
+  it("DropZone drop with empty files (covers `if (f)` falsy arm)", () => {
+    const { container } = render(<Harness preload={false} />);
+    const zone = container.querySelector('div[style*="dashed"]') as HTMLElement;
+    fireEvent.drop(zone, { dataTransfer: { files: [] } });
+    expect(screen.getByText(/Drop an OSCAL/)).toBeInTheDocument();
+  });
+
+  it("URL form submit with whitespace input (covers `if (t)` falsy arm)", () => {
+    render(<Harness preload={false} />);
+    const urlInput = screen.getByPlaceholderText(/https:\/\//) as HTMLInputElement;
+    fireEvent.change(urlInput, { target: { value: "   " } });
+    const form = urlInput.closest("form")!;
+    expect(() => fireEvent.submit(form)).not.toThrow();
   });
 });
 
