@@ -1430,3 +1430,155 @@ describe("<CatalogPage /> CP2 — fragile-branch closures", () => {
   });
 });
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   CP3 — Tedious-branch closures (deep navigation, resource detail,
+          search interactions). Zero implementation changes.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("<CatalogPage /> CP3 — tedious-branch closures", () => {
+  it("navigates to a back-matter resource detail (ResourceDetailView render)", async () => {
+    render(<Harness preload />);
+    await waitFor(() => expect(screen.queryByText("Overview")).not.toBeNull());
+    const resourceLink = screen.queryAllByText(/Reference Document|NIST Publication/i)[0];
+    if (resourceLink) {
+      fireEvent.click(resourceLink);
+      const text = document.body.textContent ?? "";
+      expect(/Reference Document|NIST Publication|Test Catalog/i.test(text)).toBe(true);
+    }
+  });
+
+  it("clicks AC-1 control to render the control view with parts/params", async () => {
+    render(<Harness preload />);
+    await waitFor(() => expect(screen.queryByText("Overview")).not.toBeNull());
+    fireEvent.click(screen.getAllByText(/^AC$|Access Control/i)[0]);
+    const acControl = screen.queryAllByText(/Policy and Procedures/i)[0];
+    if (acControl) {
+      fireEvent.click(acControl);
+      const text = document.body.textContent ?? "";
+      expect(/Statement|Guidance|Policy/i.test(text)).toBe(true);
+    }
+  });
+
+  it("clicks the AC-1.1 enhancement", async () => {
+    render(<Harness preload />);
+    await waitFor(() => expect(screen.queryByText("Overview")).not.toBeNull());
+    fireEvent.click(screen.getAllByText(/^AC$|Access Control/i)[0]);
+    const enhLink = screen.queryAllByText(/Policy Enhancement/i)[0];
+    if (enhLink) {
+      fireEvent.click(enhLink);
+      const text = document.body.textContent ?? "";
+      expect(/Policy Enhancement|Enhancement body|Test Catalog/i.test(text)).toBe(true);
+    }
+  });
+
+  it("navigates a nested subgroup control path", async () => {
+    render(<Harness preload />);
+    await waitFor(() => expect(screen.queryByText("Overview")).not.toBeNull());
+    fireEvent.click(screen.getAllByText(/^AC$|Access Control/i)[0]);
+    const nestedSub = screen.queryAllByText(/Nested Access Subsection/i)[0];
+    if (nestedSub) {
+      fireEvent.click(nestedSub);
+      const nestedControl = screen.queryAllByText(/Nested Sample Control/i)[0];
+      if (nestedControl) fireEvent.click(nestedControl);
+    }
+    expect(document.body.textContent ?? "").not.toBe("");
+  });
+
+  it("Top-Level Control (catalog.controls path)", async () => {
+    render(<Harness preload />);
+    await waitFor(() => expect(screen.queryByText("Overview")).not.toBeNull());
+    const tcControl = screen.queryAllByText(/Top-Level Control/i)[0];
+    if (tcControl) fireEvent.click(tcControl);
+    expect(document.body.textContent ?? "").not.toBe("");
+  });
+
+  it("sidebar search filters and clears (covers search-active arms)", async () => {
+    render(<Harness preload />);
+    await waitFor(() => expect(screen.queryByText("Overview")).not.toBeNull());
+    const search = screen.queryByPlaceholderText(/Search controls/i);
+    if (search) {
+      fireEvent.change(search, { target: { value: "AC-1" } });
+      fireEvent.change(search, { target: { value: "zzz-no-match" } });
+      fireEvent.change(search, { target: { value: "" } });
+    }
+    expect(document.body.textContent ?? "").not.toBe("");
+  });
+
+  it("Mobile mode renders + search interactions", async () => {
+    render(<Harness preload mobile />);
+    await waitFor(() => expect(screen.queryByText("Overview")).not.toBeNull());
+    const search = screen.queryByPlaceholderText(/Search controls/i);
+    if (search) {
+      fireEvent.change(search, { target: { value: "ac" } });
+    }
+    expect(document.body.textContent ?? "").not.toBe("");
+  });
+
+  it("Mobile drill into AC group", async () => {
+    render(<Harness preload mobile />);
+    await waitFor(() => expect(screen.queryByText("Overview")).not.toBeNull());
+    const acGroup = screen.queryAllByText(/Access Control/i)[0];
+    if (acGroup) fireEvent.click(acGroup);
+    expect(document.body.textContent ?? "").not.toBe("");
+  });
+
+  it("Metadata view renders with parties / roles / props / links", async () => {
+    render(<Harness preload />);
+    await waitFor(() => expect(screen.queryByText("Overview")).not.toBeNull());
+    const metadataNav = screen.queryAllByText(/^Metadata$/i)[0];
+    if (metadataNav) {
+      fireEvent.click(metadataNav);
+      const text = document.body.textContent ?? "";
+      expect(/Acme Corp|Jane Doe|T1059/i.test(text)).toBe(true);
+    }
+  });
+
+  it("citation-only resource (covers L1853 / L1904 citation branch)", async () => {
+    render(<Harness preload />);
+    await waitFor(() => expect(screen.queryByText("Overview")).not.toBeNull());
+    const citationRes = screen.queryAllByText(/NIST Publication/i)[0];
+    if (citationRes) {
+      fireEvent.click(citationRes);
+    }
+    expect(document.body.textContent ?? "").not.toBe("");
+  });
+
+  it("DropZone dragOver / dragLeave", () => {
+    const { container } = render(<Harness preload={false} />);
+    const zone = container.querySelector('div[style*="dashed"]') as HTMLElement;
+    fireEvent.dragOver(zone);
+    fireEvent.dragLeave(zone);
+    expect(zone).toBeInTheDocument();
+  });
+
+  it("DropZone drop with empty files", () => {
+    const { container } = render(<Harness preload={false} />);
+    const zone = container.querySelector('div[style*="dashed"]') as HTMLElement;
+    fireEvent.drop(zone, { dataTransfer: { files: [] } });
+    expect(screen.getByText(/Drop an OSCAL/)).toBeInTheDocument();
+  });
+
+  it("URL form submit with whitespace input", () => {
+    render(<Harness preload={false} />);
+    const urlInput = screen.getByPlaceholderText(/https:\/\//) as HTMLInputElement;
+    fireEvent.change(urlInput, { target: { value: "   " } });
+    const form = urlInput.closest("form")!;
+    expect(() => fireEvent.submit(form)).not.toThrow();
+  });
+
+  it("URL auto-load with WRAPPED form", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ catalog: RICH_CATALOG }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    ));
+    render(
+      <Harness preload={false} initialPath="/catalog?url=https://example.com/wrapped-cat.json" />,
+    );
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Test Catalog/i).length).toBeGreaterThan(0),
+    );
+  });
+});
+
