@@ -103,6 +103,52 @@ Organised into three buckets:
   `useImportResolver.test.ts` ("BUG: checkUrlFormat() accepts ZIP
   URLs" and "BUG: resolveHref() accepts ZIP rlinks") assert the
   current buggy behavior; flip those assertions when the fix lands.
+
+- **BUG (no lock-in tests yet, sibling of the ZIP bug):** the chain
+  resolver does not verify that a fetched document matches the model
+  slot it's being routed into. `useChainResolver.ts:325-331` accepts
+  any JSON object with `metadata` OR `uuid` as a valid OSCAL document
+  for the current step's `modelKey`. So a Catalog JSON fetched into
+  the "Profile" slot (e.g. via an SSP whose `import-profile` rlink
+  has `media-type: application/oscal.catalog+zip`) would slip past
+  the validity check; on the next iteration `extractCatalogFromProfile`
+  reads `profile.imports[0].href` from what is actually a Catalog and
+  finds nothing, silently stopping the chain.
+  Real-world repro: `samples/ssp-example.json` exhibits exactly this
+  shape — `import-profile.href` resolves to a back-matter resource
+  whose rlink media-type declares itself a catalog, not a profile.
+  Even if the ZIP issue above were fixed, this sample would still be
+  structurally wrong: it would try to render a catalog as a profile,
+  then fail to find the next-step catalog link. **Fix candidates:**
+  validate at fetch time that the unwrapped JSON contains an
+  `<modelKey>` outer-wrapper key (or that the top-level shape matches
+  the slot — e.g., Profile must have `imports`, Catalog must have
+  `groups` or `controls`), AND/OR validate that the rlink's
+  `media-type` matches the chain step's expected model (the OSCAL
+  media-type suffix tells you: `+profile` vs `+catalog` etc.).
+  Suggested BUG: lock-in tests:
+  - "BUG: chain resolver accepts a Catalog in the Profile slot" —
+    feed a JSON with `metadata` + `groups` (no `imports`) through
+    step 1 of SSP_CHAIN and assert it transitions to `success` and
+    the chain stops (because `extractCatalogFromProfile` returns
+    `href: null`).
+  - "BUG: rlink media-type ignored when picking JSON rlink" — a
+    back-matter resource with one `+catalog` and one `+profile` JSON
+    rlink picks whichever is first (no media-type-aware filtering at
+    the per-step level).
+
+- **Pattern note (validated 2026-05-14):** every uncovered / fragile
+  branch the user has investigated so far has surfaced a real bug.
+  The ZIP rejection gap, the SSP component-uuid crash, the
+  chain-resolver type-mismatch (this entry), and several earlier
+  spec-conformance bugs (Profile `matching`/`exclude-controls`, POA&M
+  `threat-ids`) all turned up while chasing partial-coverage arms.
+  Fragile branches are not neutral coverage gaps — they're an
+  inventory of latent bugs. Treat each as a candidate bug, not
+  housekeeping. Maximalist-fixture closure forces them to surface
+  because the rich default fixture would otherwise let them coast
+  past unnoticed.
+
 - `useChainResolver` cancels the whole chain on the first step's
   error. Intentional, but worth knowing — one bad hop means nothing
   upstream of it loads.
