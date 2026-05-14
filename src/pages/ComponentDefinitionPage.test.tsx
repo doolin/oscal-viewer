@@ -290,8 +290,96 @@ const RICH_CDEF = {
         props: [{ name: "type", value: "azure-documentation" }],
         rlinks: [{ href: "https://docs.microsoft.com/azure" }],
       },
+      // Resource with type not in FAMILIES → exercises familyName fallback
+      // arm (L165) and resType fallback "other" (L192).
+      {
+        uuid: "unknown-type-res",
+        title: "Unknown-Type Resource",
+        props: [{ name: "type", value: "weird-type-not-in-families" }],
+      },
+      // Resource with no type prop → exercises resType "other" default arm.
+      { uuid: "no-type-res", title: "No-Type Resource" },
+      // Bare resource with no title, no rlinks, no description, no props.
+      { uuid: "res-bare" },
     ],
   },
+};
+
+/* Stripped CDef — minimum metadata, no components, no back-matter →
+   exercises every `field || fallback` parser-style arm for absent
+   collections. */
+const STRIPPED_CDEF = {
+  uuid: "stripped-cdef",
+  metadata: { title: "Stripped Component Definition" },
+};
+
+/* Wrapped CDef — `{ component-definition: {...} }` → exercises the
+   `json["component-definition"] ?? json` truthy arm in URL/file loaders. */
+const WRAPPED_CDEF = { "component-definition": RICH_CDEF };
+
+/* CDef with unusual implementation source URIs — exercises implLabel
+   fallbacks (L201-212): non-URL source, source without filename, source
+   only filename. */
+const UNUSUAL_SOURCE_CDEF = {
+  ...RICH_CDEF,
+  uuid: "unusual-source-cdef",
+  components: [
+    {
+      uuid: "comp-source-variants",
+      type: "service",
+      title: "Source-Variant Component",
+      description: "Has control-implementations with unusual source URIs.",
+      status: { state: "operational" },
+      "control-implementations": [
+        {
+          uuid: "ci-bare-source",
+          source: "no-url-just-text",
+          description: "Source isn't a URL.",
+          "implemented-requirements": [],
+        },
+        {
+          uuid: "ci-empty-source",
+          source: "",
+          description: "Empty source.",
+          "implemented-requirements": [],
+        },
+        {
+          uuid: "ci-only-filename",
+          source: "baseline-name.json",
+          description: "Source has no slashes (URL parser falls back).",
+          "implemented-requirements": [],
+        },
+      ],
+    },
+  ],
+};
+
+/* CDef containing a control id whose family isn't in the FAMILIES map →
+   exercises familyOf returning "??" and familyName fallback. */
+const UNKNOWN_FAMILY_CDEF = {
+  ...RICH_CDEF,
+  uuid: "unknown-family-cdef",
+  components: [
+    {
+      uuid: "comp-unknown-family",
+      type: "service",
+      title: "Unknown-Family Component",
+      description: "Implements an unknown-family control id.",
+      status: { state: "operational" },
+      "control-implementations": [
+        {
+          uuid: "ci-unknown",
+          source: "#cat-res",
+          description: "Implementation with unmapped family.",
+          "implemented-requirements": [
+            { uuid: "req-unknown", "control-id": "zz-1", description: "Control in family ZZ (not in map)." },
+            // Control id without `xx-` family format → exercises `(id || "").match(/^([a-z]{2})-/i)` fallback.
+            { uuid: "req-noformat", "control-id": "no-format-id", description: "Non-conforming id." },
+          ],
+        },
+      ],
+    },
+  ],
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1122,6 +1210,89 @@ describe("<ComponentDefinitionPage /> CD1 — DropZone interactions", () => {
       .find((d) => /Open URL directly/.test(d.textContent || ""));
     expect(errBlock).toBeDefined();
     expect(() => fireEvent.click(errBlock!)).not.toThrow();
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CD2 — Fragile-branch closures via STRIPPED/WRAPPED/UNUSUAL fixtures
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("<ComponentDefinitionPage /> CD2 — fragile-branch closures", () => {
+  it("renders STRIPPED_CDEF (no components, no back-matter)", async () => {
+    render(<Harness preload cdef={STRIPPED_CDEF as any} />);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Stripped Component Definition/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("loads WRAPPED_CDEF via drop (covers `data['component-definition'] ?? data` truthy arm)", () => {
+    render(<Harness preload={false} />);
+    const zone = screen.getByText(/Drop an OSCAL/).parentElement!;
+    fireDrop(zone, cdefFile(WRAPPED_CDEF, "wrapped.json"));
+    expect(zone).toBeInTheDocument();
+  });
+
+  it("renders a component with unusual control-implementation sources (covers implLabel fallbacks)", async () => {
+    render(<Harness preload cdef={UNUSUAL_SOURCE_CDEF as any} />);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Source-Variant Component/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("renders a control with unknown family (covers familyOf '??' + familyName fallback)", async () => {
+    render(<Harness preload cdef={UNKNOWN_FAMILY_CDEF as any} />);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Unknown-Family Component/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("URL auto-load: WRAPPED_CDEF (covers L306-style outer-wrapping arm)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(WRAPPED_CDEF), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    ));
+    render(<Harness preload={false} initialPath="/component-definition?url=https://example.com/wrapped-cdef.json" />);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Sample Component Definition/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("URL auto-load: missing metadata error (covers catch arm)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ "component-definition": { uuid: "bad" } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    ));
+    render(<Harness preload={false} initialPath="/component-definition?url=https://example.com/bad-cdef.json" />);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Not an OSCAL component-definition/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("DropZone dragOver/dragLeave toggles dragging (covers ternary truthy arms)", () => {
+    const { container } = render(<Harness preload={false} />);
+    const zone = container.querySelector('div[style*="dashed"]') as HTMLElement;
+    fireEvent.dragOver(zone);
+    fireEvent.dragLeave(zone);
+    expect(zone).toBeInTheDocument();
+  });
+
+  it("DropZone drop with empty files (covers `if (f)` falsy arm)", () => {
+    const { container } = render(<Harness preload={false} />);
+    const zone = container.querySelector('div[style*="dashed"]') as HTMLElement;
+    fireEvent.drop(zone, { dataTransfer: { files: [] } });
+    expect(screen.getByText(/Drop an OSCAL/)).toBeInTheDocument();
+  });
+
+  it("URL form submit with whitespace-only input (covers `if (t)` falsy arm)", () => {
+    render(<Harness preload={false} />);
+    const urlInput = screen.getByPlaceholderText(/https:\/\//) as HTMLInputElement;
+    fireEvent.change(urlInput, { target: { value: "   " } });
+    const form = urlInput.closest("form")!;
+    expect(() => fireEvent.submit(form)).not.toThrow();
   });
 });
 
