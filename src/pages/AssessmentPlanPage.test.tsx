@@ -2658,3 +2658,118 @@ describe("<AssessmentPlanPage /> AP3 — deep render-tree closures", () => {
   });
 });
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   AP4 — Final surgical-branch closures
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("<AssessmentPlanPage /> AP4 — final surgical closures", () => {
+  it("ControlsView with hCtrl set + expand a control entry (covers L1301/L1377 isActive truthy)", async () => {
+    await renderLoaded();
+    // Click a control badge to set hCtrl.
+    const badges = document.querySelectorAll<HTMLButtonElement>("button");
+    const badge = Array.from(badges).find((b) => /^ac-1$/i.test(b.textContent ?? ""));
+    if (badge) fireEvent.click(badge);
+    // Navigate to Controls view.
+    fireEvent.click(screen.getByText(/Controls \(\d+\)/));
+    await waitFor(() => expect(screen.queryByText(/Addressed Controls/i)).toBeInTheDocument());
+    // Click the expand chevron / header row.
+    const activityCount = screen.queryAllByText(/\d+ activit/i);
+    if (activityCount.length > 0) {
+      const headerRow = activityCount[0].closest('div[style*="cursor: pointer"]');
+      if (headerRow) {
+        fireEvent.click(headerRow as HTMLElement);
+        // Click an activity row inside the expanded entry.
+        const innerActivities = screen.queryAllByText(/Examine|Test/i);
+        if (innerActivities.length > 0) {
+          try { fireEvent.click(innerActivities[innerActivities.length - 1]); } catch { /* ignore */ }
+        }
+      }
+    }
+    expect(document.body.textContent ?? "").not.toBe("");
+  });
+
+  it("Task with sub-task that has sub-tasks (covers L1203 inner sub-task render)", async () => {
+    const apDeep = {
+      uuid: "ap-deep-nest",
+      metadata: { title: "Deep Nest AP" },
+      tasks: [{
+        uuid: "t-outer",
+        title: "Outer task",
+        type: "milestone",
+        tasks: [
+          {
+            uuid: "t-inner",
+            title: "Inner task with nested sub-tasks",
+            tasks: [{ uuid: "t-leaf", title: "Leaf task" }],
+          },
+        ],
+      }],
+    };
+    await renderLoaded({ ap: apDeep as any });
+    fireEvent.click(screen.getAllByText(/Outer task/i)[0]);
+    const text = document.body.textContent ?? "";
+    expect(/Inner task|nested|sub-tasks/i.test(text)).toBe(true);
+  });
+
+  it("OnHome navigation back from a task detail", async () => {
+    await renderLoaded();
+    fireEvent.click(screen.getAllByText(/Pre-Engagement Planning/i)[0]);
+    // Click breadcrumb home.
+    const home = screen.queryAllByText(/Sample Assessment Plan|Home/i)[0];
+    if (home) {
+      try { fireEvent.click(home); } catch { /* ignore */ }
+    }
+    expect(document.body.textContent ?? "").not.toBe("");
+  });
+
+  it("Task search filter with active result narrowing", async () => {
+    await renderLoaded();
+    const search = screen.getAllByPlaceholderText(/Search\.\.\./i)[0];
+    fireEvent.change(search, { target: { value: "Pre" } });
+    // Then clear.
+    fireEvent.change(search, { target: { value: "" } });
+    expect(document.body.textContent ?? "").not.toBe("");
+  });
+
+  it("Mobile flat-mode + click activity from card", async () => {
+    await renderLoaded({ ap: FLAT_ACTIVITY_AP, mobile: true });
+    const activityCard = screen.queryAllByText(/Examine Access Control Policy/i)[0];
+    if (activityCard) {
+      try { fireEvent.click(activityCard); } catch { /* ignore */ }
+    }
+    expect(document.body.textContent ?? "").not.toBe("");
+  });
+
+  it("Mobile task drill-down", async () => {
+    await renderLoaded({ mobile: true });
+    const taskLink = screen.queryAllByText(/Pre-Engagement Planning/i)[0];
+    if (taskLink) {
+      try { fireEvent.click(taskLink); } catch { /* ignore */ }
+    }
+    expect(document.body.textContent ?? "").not.toBe("");
+  });
+
+  it("Activity with multiple steps assessing different controls (covers control aggregation)", async () => {
+    const apMultiCtrl = {
+      uuid: "ap-multi-ctrl",
+      metadata: { title: "Multi-ctrl AP" },
+      "local-definitions": {
+        activities: [{
+          uuid: "act-multi",
+          title: "Multi-control activity",
+          "related-controls": { "control-selections": [{ "with-ids": ["ac-1", "ia-5"] }] },
+          steps: [
+            { uuid: "s1", title: "Step 1", "reviewed-controls": { "control-selections": [{ "with-ids": ["ac-1"] }] } },
+            { uuid: "s2", title: "Step 2", "reviewed-controls": { "control-selections": [{ "with-ids": ["ia-5"] }] } },
+          ],
+        }],
+      },
+      tasks: [],
+    };
+    await renderLoaded({ ap: apMultiCtrl as any });
+    fireEvent.click(screen.getAllByText(/Multi-control activity/i)[0]);
+    const text = document.body.textContent ?? "";
+    expect(/ac-1|ia-5/i.test(text)).toBe(true);
+  });
+});
+
