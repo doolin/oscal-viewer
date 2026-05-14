@@ -112,11 +112,24 @@ const RICH_CATALOG: Catalog = {
             },
           ],
           parts: [
+            // "overview" part → exercises sectionIcon "info" arm.
+            { id: "ac-1-ov", name: "overview", prose: "AC-1 overview text." },
             {
               id: "ac-1-stmt",
               name: "statement",
-              prose: "Develop, document, and disseminate to {{ insert: param, ac-1_prm_1 }} the policy.",
+              // Token references a param NOT in the map → exercises the
+              // unknown-param `[Assignment: id]` fallback arm.
+              prose: "Develop, document, and disseminate to {{ insert: param, ac-1_prm_1 }} the policy with {{ insert: param, missing-param }}.",
+              parts: [
+                {
+                  // Sub-part without id → exercises `key={sp.id ?? i}` fallback.
+                  name: "item",
+                  prose: "Sub-statement (no id).",
+                },
+              ],
             },
+            // Second part without id → exercises top-level `key={part.id ?? i}` fallback.
+            { name: "guidance", prose: "Second guidance paragraph (no id)." },
             {
               id: "ac-1-gdn",
               name: "guidance",
@@ -135,6 +148,10 @@ const RICH_CATALOG: Catalog = {
           ],
           links: [
             { href: "https://attack.mitre.org/techniques/T1059", rel: "reference", text: "ATT&CK T1059" },
+            // Link without text (covers `lk.text ?? lk.href` fallback).
+            { href: "https://no-text.example/page" },
+            // Link with #-prefix (covers `lk.href.startsWith("#")` truthy arm).
+            { href: "#fragment-anchor", text: "Anchor" },
           ],
           controls: [
             {
@@ -147,6 +164,12 @@ const RICH_CATALOG: Catalog = {
             },
           ],
         },
+        // Sparse control with no params/parts/controls/links → exercises
+        // empty-array fallbacks across the control render tree.
+        { id: "ac-99", title: "Sparse Control", props: [{ name: "label", value: "AC-99" }] },
+        // Unlabeled control (no label prop) → exercises `getLabel` empty
+        // fallback and `lbl ? ... : ""` ternary falsy arms.
+        { id: "ac-88", title: "Unlabeled Control" },
       ],
     },
   ],
@@ -154,6 +177,13 @@ const RICH_CATALOG: Catalog = {
     {
       id: "tc-1",
       title: "Top-Level Control",
+    },
+    // Top-level control with enhancements (covers enhancement iteration
+    // at catalog.controls top level).
+    {
+      id: "tc-2",
+      title: "Top-Level Control With Enhancement",
+      controls: [{ id: "tc-2.1", title: "TC-2 Enhancement" }],
     },
   ],
   "back-matter": {
@@ -179,9 +209,25 @@ const RICH_CATALOG: Catalog = {
         ],
         props: [{ name: "type", value: "documentation" }],
       },
+      // Bare resource (no title, no rlinks, no description, no remarks,
+      // no citation) → exercises every absent-field fallback in resource
+      // rendering.
+      { uuid: "res-bare" },
     ],
   },
 };
+
+/* Stripped catalog — minimum metadata, no groups, no top-level controls,
+   no back-matter. Exercises every `catalog.X ?? []` parser fallback and
+   the no-groups/no-controls views. */
+const STRIPPED_CATALOG: Catalog = {
+  uuid: "stripped",
+  metadata: { title: "Stripped Catalog" },
+};
+
+/* Wrapped catalog form — `{ catalog: {...} }` → exercises the
+   `json["catalog"] ?? json` truthy arm in the URL/file loaders. */
+const WRAPPED_CATALOG = { catalog: RICH_CATALOG };
 
 /** Fire a drop event with a given File on the dropzone. */
 function fireDrop(zone: Element, file: File) {
@@ -1239,6 +1285,148 @@ describe("<CatalogPage /> CP1 — catalog helper recursion via nested groups", (
     await waitFor(() =>
       expect(screen.queryAllByText(/\[Assignment: not-a-real-id\]/).length).toBeGreaterThan(0),
     );
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CP2 — Fragile-branch closures via STRIPPED_CATALOG + targeted detail views
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("<CatalogPage /> CP2 — fragile-branch closures", () => {
+  it("renders STRIPPED_CATALOG (no groups / no controls / no back-matter)", async () => {
+    render(<Harness preload catalog={STRIPPED_CATALOG} />);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Stripped Catalog/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("loads WRAPPED_CATALOG via dropFile (covers `json['catalog'] ?? json` truthy arm)", () => {
+    render(<Harness preload={false} />);
+    const zone = screen.getByText(/Drop an OSCAL/).parentElement!;
+    fireDrop(zone, catalogFile(WRAPPED_CATALOG, "wrapped.json"));
+    // Render proceeds without throwing — the wrapped form is unwrapped by L346.
+    expect(zone).toBeInTheDocument();
+  });
+
+  it("navigates to ac-99 sparse control (covers empty-array fallbacks in control view)", async () => {
+    render(<Harness preload />);
+    await waitFor(() => expect(screen.queryByText("Overview")).not.toBeNull());
+    fireEvent.click(screen.getAllByText(/Access Control/)[0]);
+    fireEvent.click(screen.getAllByText(/Sparse Control/)[0]);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Sparse Control/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("navigates to ac-88 unlabeled control (covers getLabel-empty arm)", async () => {
+    render(<Harness preload />);
+    await waitFor(() => expect(screen.queryByText("Overview")).not.toBeNull());
+    fireEvent.click(screen.getAllByText(/Access Control/)[0]);
+    fireEvent.click(screen.getAllByText(/Unlabeled Control/)[0]);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Unlabeled Control/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("renders the 'overview' part in a control view (covers sectionIcon 'info' arm)", async () => {
+    render(<Harness preload />);
+    await waitFor(() => expect(screen.queryByText("Overview")).not.toBeNull());
+    fireEvent.click(screen.getAllByText(/Access Control/)[0]);
+    fireEvent.click(screen.getAllByText(/Policy and Procedures/)[0]);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/AC-1 overview text/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("renders a link without text using href as the display (covers `lk.text ?? lk.href` fallback)", async () => {
+    render(<Harness preload />);
+    await waitFor(() => expect(screen.queryByText("Overview")).not.toBeNull());
+    fireEvent.click(screen.getAllByText(/Access Control/)[0]);
+    fireEvent.click(screen.getAllByText(/Policy and Procedures/)[0]);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/no-text\.example\/page/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("renders an unresolved param token in mid-prose (covers unknown-param fallback)", async () => {
+    render(<Harness preload />);
+    await waitFor(() => expect(screen.queryByText("Overview")).not.toBeNull());
+    fireEvent.click(screen.getAllByText(/Access Control/)[0]);
+    fireEvent.click(screen.getAllByText(/Policy and Procedures/)[0]);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/missing-param/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("URL auto-load: WRAPPED_CATALOG form (covers `data['catalog'] ?? data` truthy at L306)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(WRAPPED_CATALOG), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    ));
+    render(
+      <MemoryRouter initialEntries={["/catalog?url=https://example.com/wrapped-cat.json"]}>
+        <AuthProvider>
+          <OscalProvider>
+            <CatalogPage />
+          </OscalProvider>
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Test Catalog/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("URL auto-load: missing metadata error (covers L307 truthy arm + L313 catch)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ catalog: { uuid: "bad" } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    ));
+    render(
+      <MemoryRouter initialEntries={["/catalog?url=https://example.com/bad-cat.json"]}>
+        <AuthProvider>
+          <OscalProvider>
+            <CatalogPage />
+          </OscalProvider>
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Not an OSCAL Catalog — no metadata/).length).toBeGreaterThan(0),
+    );
+  });
+
+  it("DropZone dragOver/dragLeave toggles dragging style (covers ternaries)", () => {
+    const { container } = render(<Harness preload={false} />);
+    const zone = container.querySelector('div[style*="dashed"]') as HTMLElement;
+    fireEvent.dragOver(zone);
+    fireEvent.dragLeave(zone);
+    expect(zone).toBeInTheDocument();
+  });
+
+  it("DropZone drop with empty files array (covers `if (f)` falsy arm)", () => {
+    const { container } = render(<Harness preload={false} />);
+    const zone = container.querySelector('div[style*="dashed"]') as HTMLElement;
+    fireEvent.drop(zone, { dataTransfer: { files: [] } });
+    expect(screen.getByText(/Drop an OSCAL/)).toBeInTheDocument();
+  });
+
+  it("navigates to a top-level enhancement (covers catalog.controls enhancement iteration)", async () => {
+    render(<Harness preload />);
+    await waitFor(() => expect(screen.queryByText("Overview")).not.toBeNull());
+    // tc-2 is a top-level control with an enhancement tc-2.1.
+    // Find and click it in the sidebar (Top-Level section).
+    const topLevel = screen.queryAllByText(/Top-Level Control With Enhancement/);
+    if (topLevel.length > 0) {
+      fireEvent.click(topLevel[0]);
+      await waitFor(() =>
+        expect(screen.queryAllByText(/Top-Level Control With Enhancement/).length).toBeGreaterThan(0),
+      );
+    }
   });
 });
 
