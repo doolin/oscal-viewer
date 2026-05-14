@@ -200,6 +200,51 @@ describe("findParentCatalogControl()", () => {
     const cat: any = {};
     expect(findParentCatalogControl(cat, "ac-1.1")).toBeUndefined();
   });
+
+  /* ─── Iteration-path closures targeting L155/L169/L181/L190 partials ─── */
+
+  it("findCatalogControl iterates past a non-matching enhancement to find a later match (L155)", () => {
+    const enh: any = { id: "ac-1.2" };
+    const cat: any = { groups: [{ id: "ac", controls: [
+      { id: "ac-1", controls: [{ id: "ac-1.1" }, enh] },
+    ]}]};
+    expect(findCatalogControl(cat, "ac-1.2")).toBe(enh);
+  });
+
+  it("findCatalogControl iterates a top-level control without `controls` via `?? []` (L169)", () => {
+    const target: any = { id: "pm-2" };
+    const cat: any = { controls: [
+      { id: "pm-1" },  // no `controls` property
+      target,
+    ]};
+    expect(findCatalogControl(cat, "pm-2")).toBe(target);
+  });
+
+  it("findCatalogControl iterates past a non-matching enhancement at catalog.controls top-level", () => {
+    const enh: any = { id: "pm-1.2" };
+    const cat: any = { controls: [
+      { id: "pm-1", controls: [{ id: "pm-1.1" }, enh] },
+    ]};
+    expect(findCatalogControl(cat, "pm-1.2")).toBe(enh);
+  });
+
+  it("findParentCatalogControl iterates a control without `controls` before finding the parent (L181)", () => {
+    const parent: any = { id: "ac-2", controls: [{ id: "ac-2.1" }] };
+    const cat: any = { groups: [{ id: "ac", controls: [
+      { id: "ac-1" },  // no `controls`
+      parent,
+    ]}]};
+    expect(findParentCatalogControl(cat, "ac-2.1")).toBe(parent);
+  });
+
+  it("findParentCatalogControl iterates a control without `controls` at catalog.controls top-level (L190)", () => {
+    const parent: any = { id: "pm-2", controls: [{ id: "pm-2.1" }] };
+    const cat: any = { controls: [
+      { id: "pm-1" },  // no `controls`
+      parent,
+    ]};
+    expect(findParentCatalogControl(cat, "pm-2.1")).toBe(parent);
+  });
 });
 
 describe("getCatalogLabel()", () => {
