@@ -549,7 +549,9 @@ function SidebarTree({ catalog, view, collapsed, searchTerm, navigate, toggleGro
 
   /** Check if a control matches the search */
   function controlMatches(c: Control): boolean {
+    /* v8 ignore start — gated callers (renderControl L600, groupHasMatch) never invoke with empty lowerSearch */
     if (!lowerSearch) return true;
+    /* v8 ignore stop */
     if (c.id.toLowerCase().includes(lowerSearch)) return true;
     if (c.title.toLowerCase().includes(lowerSearch)) return true;
     const lbl = getLabel(c.props);
@@ -559,7 +561,9 @@ function SidebarTree({ catalog, view, collapsed, searchTerm, navigate, toggleGro
 
   /** Check if any control in a group (recursively) matches */
   function groupHasMatch(g: Group): boolean {
+    /* v8 ignore start — gated caller (renderGroup L569) never invokes with empty lowerSearch */
     if (!lowerSearch) return true;
+    /* v8 ignore stop */
     if (g.title.toLowerCase().includes(lowerSearch)) return true;
     if ((g.controls ?? []).some((c) => controlMatches(c) || (c.controls ?? []).some(controlMatches))) return true;
     return (g.groups ?? []).some(groupHasMatch);
@@ -797,7 +801,9 @@ function MobileDrillDown({ catalog, mobilePath, searchTerm, setSearchTerm, onDri
   }
 
   function matchesSearch(c: Control): boolean {
+    /* v8 ignore start — gated caller (getChildren L676) never invokes with empty lowerSearch */
     if (!lowerSearch) return true;
+    /* v8 ignore stop */
     if (c.id.toLowerCase().includes(lowerSearch)) return true;
     if (c.title.toLowerCase().includes(lowerSearch)) return true;
     const lbl = getLabel(c.props);
