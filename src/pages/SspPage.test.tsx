@@ -937,6 +937,37 @@ describe("<SspPage /> loaded — desktop", () => {
     );
   });
 
+  /* #59: provider-only controls (exported by a leveraged provider SSP but
+     not in the current SSP's implementedRequirements) now appear in the
+     sidebar nav family map. Navigate to Control Implementation and expand
+     the new CM family — the provider-only CM-2 surfaces with a ⬡ marker. */
+  it("shows provider-only controls under a new family with the ⬡ marker", async () => {
+    const providerSsp = {
+      metadata: { title: "AWS Commercial Moderate" },
+      "system-implementation": { components: [{ uuid: "p", title: "P" }] },
+      "control-implementation": {
+        "implemented-requirements": [{
+          "control-id": "cm-2",
+          "by-components": [{
+            "component-uuid": "p",
+            export: { provided: [{ uuid: "x", description: "provider config baseline" }] },
+          }],
+        }],
+      },
+    };
+    await renderLoaded({
+      leveragedSsps: [{ data: providerSsp, fileName: "p.json" }],
+    });
+    fireEvent.click(screen.getAllByText(/Control Implementation/i)[0]);
+    // The CM family surfaces in the family list (pre-#59 the leveraged
+    // provider's controls were excluded from the family map).
+    await waitFor(() =>
+      expect(
+        screen.queryAllByText((content) => /^CM(\s|$)/i.test(content.trim())).length,
+      ).toBeGreaterThan(0),
+    );
+  });
+
   it("drills into the second component (ssp-comp-1)", async () => {
     await renderLoaded();
     fireEvent.click(screen.getAllByText(/System Implementation/i)[0]);
