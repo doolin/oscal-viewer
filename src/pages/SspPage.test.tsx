@@ -943,6 +943,81 @@ describe("<SspPage /> loaded — desktop", () => {
     expect(screen.queryAllByText(/^AU$/).length).toBe(0);
   });
 
+  /* #60: when a matching provider SSP is loaded, the upload-zone card
+     swaps to a "Loaded Provider SSP" summary with a Replace SSP button.
+     Port: https://github.com/EasyDynamics/oscal-viewer/pull/60 */
+  it("shows the loaded-provider summary + Replace button when a matching provider is loaded", async () => {
+    const providerSsp = {
+      metadata: { title: "AWS Commercial Moderate Authorization Boundary" },
+      "system-implementation": { components: [{ uuid: "p", title: "P" }] },
+      "control-implementation": {
+        "implemented-requirements": [{
+          "control-id": "ac-2",
+          "by-components": [{
+            "component-uuid": "p",
+            export: { provided: [{ uuid: "x", description: "y" }] },
+          }],
+        }],
+      },
+    };
+    await renderLoaded({
+      leveragedSsps: [{ data: providerSsp, fileName: "aws-loaded.json" }],
+    });
+    fireEvent.click(screen.getAllByText(/System Implementation/i)[0]);
+    fireEvent.click(screen.getAllByText(/Leveraged/i)[0]);
+    const titleH4s = document.querySelectorAll("h4");
+    fireEvent.click(titleH4s[0]);
+    // The "Loaded Provider SSP" section label surfaces (not "Load Provider SSP").
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Loaded Provider SSP/).length).toBeGreaterThan(0),
+    );
+    // Replace SSP button is wired up.
+    expect(screen.queryAllByRole("button", { name: /Replace SSP/ }).length).toBeGreaterThan(0);
+  });
+
+  /* #60: Controls Offered card carries a By Control / By Component toggle
+     once a provider is matched. Clicking "By Component" renders the
+     componentGroups view keyed by exporting provider-component title. */
+  it("toggles the Controls Offered view between By Control and By Component", async () => {
+    const providerSsp = {
+      metadata: { title: "AWS Commercial Moderate" },
+      "system-implementation": { components: [{ uuid: "p1", title: "IAM Service" }] },
+      "control-implementation": {
+        "implemented-requirements": [{
+          "control-id": "ac-2",
+          "by-components": [{
+            "component-uuid": "p1",
+            export: {
+              provided: [{ uuid: "p-aws", description: "MFA enforcement" }],
+              responsibilities: [{ uuid: "r-aws", description: "Customer config" }],
+            },
+          }],
+        }],
+      },
+    };
+    await renderLoaded({
+      leveragedSsps: [{ data: providerSsp, fileName: "aws.json" }],
+    });
+    fireEvent.click(screen.getAllByText(/System Implementation/i)[0]);
+    fireEvent.click(screen.getAllByText(/Leveraged/i)[0]);
+    const titleH4s = document.querySelectorAll("h4");
+    fireEvent.click(titleH4s[0]);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Controls Offered/).length).toBeGreaterThan(0),
+    );
+    // By Component toggle button surfaces.
+    const byComponent = screen.getAllByRole("button", { name: /By Component/i })[0];
+    fireEvent.click(byComponent);
+    // The provider-component title surfaces as a group header.
+    await waitFor(() =>
+      expect(screen.queryAllByText(/IAM Service/).length).toBeGreaterThan(0),
+    );
+    // Switch back to By Control — family header AC surfaces.
+    const byControl = screen.getAllByRole("button", { name: /By Control/i })[0];
+    fireEvent.click(byControl);
+    expect(screen.queryAllByText(/^AC$/).length).toBeGreaterThan(0);
+  });
+
   /* #59: provider-only controls (exported by a leveraged provider SSP but
      not in the current SSP's implementedRequirements) now appear in the
      sidebar nav family map. Navigate to Control Implementation and expand
