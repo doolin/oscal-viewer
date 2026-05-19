@@ -26,7 +26,7 @@ into this fork.
 | [#59](https://github.com/EasyDynamics/oscal-viewer/pull/59) | Leveraged auth improvements + Layout SSP count | `54557dc` | [#104](https://github.com/doolin/oscal-viewer/pull/104) | `d8fa39c` | ported |
 | [#60](https://github.com/EasyDynamics/oscal-viewer/pull/60) | LeveragedAuthDetailView grouping + loading | `18ab2e1` | [#105](https://github.com/doolin/oscal-viewer/pull/105) | `32e4066` | ported |
 | [#61](https://github.com/EasyDynamics/oscal-viewer/pull/61) | Title matching accuracy | `ec85ff6` | [#106](https://github.com/doolin/oscal-viewer/pull/106) | `62d8ec4` | ported |
-| [#62](https://github.com/EasyDynamics/oscal-viewer/pull/62) | DropZone max width consistency | `6ccafa3` | — | — | pending |
+| [#62](https://github.com/EasyDynamics/oscal-viewer/pull/62) | DropZone max width consistency | `6ccafa3` | [#107](https://github.com/doolin/oscal-viewer/pull/107) | `6b85f5c` | ported |
 
 ## Notes
 
@@ -36,3 +36,23 @@ into this fork.
 - Update the **Local PR** and **Local SHA** columns when each port lands.
 - Bug-lock-in tests carry a `BUG:` prefix per the existing convention; flip
   assertions in a later fix PR.
+
+## Arc complete — 2026-05-19
+
+All 8 upstream PRs ported. Active bug lock-ins (held for the bug-fix round
+that follows the coverage push):
+
+| Lock-in | Where | What it asserts |
+|---|---|---|
+| #57 case-asymmetric sort-id | `useCatalogSortIndex.test.tsx` | Walker stores ID case-as-found; comparator tries lowercase + raw, never uppercase. Catalogs storing uppercase IDs with lowercase lookups miss the sort-id and fall through to raw-string compare. One-line fix: normalize keys to lowercase in `buildSortMap`. |
+| #58 fileName-skip gap | `useLeveragedSspResolver.test.tsx` | `initiallyLoaded` is built from `sourceUrl` + `fileName` but the visited check is URL-keyed only. A previously-uploaded provider file does NOT dedup against a later auto-fetch of the same `.json` URL. One-line fix: also check `fileNameFromUrl(url)`. |
+| #60 cache never clears | `useChainResolver.test.ts` | `completedChainAttempts` is module-scoped and never pruned. After `clearSsp` + same-URL reload, the chain refuses to re-run. Fix options: instance-scope via `useRef`, or expose `clearChainCache()` that `OscalProvider` calls from `clearSsp` / `addLeveragedSsp`. |
+
+Pre-arc lock-ins still pending fix-rounds: Profile `matching` patterns
+silently dropped; Profile `exclude-controls` silently ignored; POA&M
+`threat-ids` not rendered; SspPage:1807 crash on `by-component` lacking
+`component-uuid`.
+
+The #56 BUG (empty leveraged-auth title matches every provider) was
+flipped to its fixed assertion when #58 ported (not #61 as initially
+predicted — the new `titleMatches` in #58 is what fixed it).
