@@ -141,7 +141,13 @@ function fileNameFromUrl(url: string): string {
   }
 }
 
-const completedChainAttempts = new Set<string>();
+/**
+ * Module-scoped cache of completed chain attempts. Exported so tests can
+ * call `completedChainAttempts.clear()` between runs — production code
+ * intentionally never clears this Set (see the BUG lock-in in the test
+ * file).
+ */
+export const completedChainAttempts = new Set<string>();
 
 function chainAttemptKey(
   initialHref: string,
