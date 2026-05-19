@@ -937,6 +937,89 @@ describe("<SspPage /> loaded — desktop", () => {
     );
   });
 
+  /* #61: titleMatches now requires substring side to be >=8 chars so short
+     tokens (e.g. "ed", "us") can't drive false positives. Pre-#61 a
+     provider titled "AWS ED Cloud" would match an la titled "ED" via the
+     unconditional substring branch. */
+  it("#61 precision: short-string substring no longer drives a match", async () => {
+    const providerSsp = {
+      metadata: { title: "AWS ED Cloud" },
+      "system-implementation": { components: [{ uuid: "p", title: "P" }] },
+      "control-implementation": {
+        "implemented-requirements": [{
+          "control-id": "ac-2",
+          "by-components": [{
+            "component-uuid": "p",
+            export: { provided: [{ uuid: "p-x", description: "x" }] },
+          }],
+        }],
+      },
+    };
+    const customSsp = {
+      ...RICH_SSP,
+      "system-implementation": {
+        ...RICH_SSP["system-implementation"],
+        "leveraged-authorizations": [
+          { uuid: "la-ed", title: "ED" },  // short title, just 2 chars cleaned
+        ],
+      },
+    };
+    await renderLoaded({
+      ssp: customSsp,
+      leveragedSsps: [{ data: providerSsp, fileName: "ed.json" }],
+    });
+    fireEvent.click(screen.getAllByText(/System Implementation/i)[0]);
+    fireEvent.click(screen.getAllByText(/Leveraged/i)[0]);
+    const titleH4s = document.querySelectorAll("h4");
+    fireEvent.click(titleH4s[0]);
+    // No match — "ED" is too short and tokenizes to empty after the >2-char
+    // length filter.
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Controls Offered \(0\)/).length).toBeGreaterThan(0),
+    );
+  });
+
+  /* #61: expanded stopword list now includes government-org tokens so two
+     unrelated agencies don't match solely on shared organizational
+     vocabulary. */
+  it("#61 precision: shared government-org tokens don't drive a match", async () => {
+    const providerSsp = {
+      metadata: { title: "Federal Department of Energy" },
+      "system-implementation": { components: [{ uuid: "p", title: "P" }] },
+      "control-implementation": {
+        "implemented-requirements": [{
+          "control-id": "ac-2",
+          "by-components": [{
+            "component-uuid": "p",
+            export: { provided: [{ uuid: "p-x", description: "x" }] },
+          }],
+        }],
+      },
+    };
+    const customSsp = {
+      ...RICH_SSP,
+      "system-implementation": {
+        ...RICH_SSP["system-implementation"],
+        "leveraged-authorizations": [
+          { uuid: "la-ed", title: "Federal Department of Education" },
+        ],
+      },
+    };
+    await renderLoaded({
+      ssp: customSsp,
+      leveragedSsps: [{ data: providerSsp, fileName: "doe.json" }],
+    });
+    fireEvent.click(screen.getAllByText(/System Implementation/i)[0]);
+    fireEvent.click(screen.getAllByText(/Leveraged/i)[0]);
+    const titleH4s = document.querySelectorAll("h4");
+    fireEvent.click(titleH4s[0]);
+    // "federal", "department", "education" / "energy" are all stopwords —
+    // both token sets reduce to {} → no match.
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Controls Offered \(0\)/).length).toBeGreaterThan(0),
+    );
+  });
+
   /* #60: when a matching provider SSP is loaded, the upload-zone card
      swaps to a "Loaded Provider SSP" summary with a Replace SSP button.
      Port: https://github.com/EasyDynamics/oscal-viewer/pull/60 */
