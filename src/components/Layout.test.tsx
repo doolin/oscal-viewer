@@ -573,6 +573,94 @@ describe("<Layout /> mobile menu dot indicator", () => {
   });
 });
 
+/* ─────────────── SSP count badge — #59 ─────────────── */
+
+function SspMultiSeeder({ children }: { children?: ReactNode }) {
+  const { setSsp, addLeveragedSsp } = useOscal();
+  useEffect(() => {
+    setSsp({ uuid: "current-ssp" }, "current.json");
+    addLeveragedSsp({ uuid: "provider-1" }, "provider1.json");
+    addLeveragedSsp({ uuid: "provider-2" }, "provider2.json");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return <>{children}</>;
+}
+
+function SspLoneSeeder({ children }: { children?: ReactNode }) {
+  const { setSsp } = useOscal();
+  useEffect(() => {
+    setSsp({ uuid: "lone-ssp" }, "ssp.json");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return <>{children}</>;
+}
+
+describe("<Layout /> SSP count badge (port upstream #59)", () => {
+  function renderWithSeeder(
+    Seeder: React.ComponentType<{ children?: ReactNode }>,
+    opts: { mobile?: boolean } = {},
+  ) {
+    stubMatchMedia(opts.mobile ?? false);
+    return render(
+      <ThemeProvider>
+        <AuthProvider>
+          <OscalProvider>
+            <Seeder>
+              <MemoryRouter initialEntries={["/"]}>
+                <Routes>
+                  <Route element={<Layout />}>
+                    <Route path="/" element={<div>page: home</div>} />
+                  </Route>
+                </Routes>
+              </MemoryRouter>
+            </Seeder>
+          </OscalProvider>
+        </AuthProvider>
+      </ThemeProvider>,
+    );
+  }
+
+  it("desktop: renders the '3 SSPs' badge when current SSP + two leveraged SSPs are loaded", () => {
+    renderWithSeeder(SspMultiSeeder);
+    expect(screen.getAllByText(/3 SSPs/).length).toBeGreaterThan(0);
+  });
+
+  it("desktop: SSP tab carries a tooltip listing every loaded SSP fileName", () => {
+    renderWithSeeder(SspMultiSeeder);
+    const sspLink = screen.getAllByRole("link").find((l) =>
+      /SSP/.test(l.textContent ?? "") && l.getAttribute("title"),
+    );
+    expect(sspLink).toBeTruthy();
+    const title = sspLink!.getAttribute("title")!;
+    expect(title).toContain("Current: current.json");
+    expect(title).toContain("Leveraged: provider1.json");
+    expect(title).toContain("Leveraged: provider2.json");
+  });
+
+  it("desktop: no badge when only a single SSP is loaded", () => {
+    renderWithSeeder(SspLoneSeeder);
+    expect(screen.queryAllByText(/SSPs$/).length).toBe(0);
+  });
+
+  it("desktop: no badge when zero SSPs are loaded", () => {
+    renderLayoutWithSeeder({ seededModel: "catalog" });
+    expect(screen.queryAllByText(/SSPs$/).length).toBe(0);
+  });
+
+  it("mobile: menu label appends '(N)' when 2+ SSPs are loaded", () => {
+    renderWithSeeder(SspMultiSeeder, { mobile: true });
+    fireEvent.click(screen.getByRole("button", { name: /Toggle navigation menu/ }));
+    expect(screen.queryAllByText(/SSP \(3\)/).length).toBeGreaterThan(0);
+  });
+
+  it("mobile: menu label has no '(N)' when only one SSP is loaded", () => {
+    renderWithSeeder(SspLoneSeeder, { mobile: true });
+    fireEvent.click(screen.getByRole("button", { name: /Toggle navigation menu/ }));
+    // Just the bare "SSP" label, no parenthesized count.
+    expect(screen.queryAllByText(/SSP \(\d+\)/).length).toBe(0);
+  });
+});
+
 /* ─────────────── Disabled tab note ─────────────── */
 
 // NOTE: The `if (m.disabled)` branch at Layout.tsx L188-211 is structurally

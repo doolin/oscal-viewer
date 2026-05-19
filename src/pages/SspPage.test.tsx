@@ -943,6 +943,37 @@ describe("<SspPage /> loaded — desktop", () => {
     expect(screen.queryAllByText(/^AU$/).length).toBe(0);
   });
 
+  /* #59: provider-only controls (exported by a leveraged provider SSP but
+     not in the current SSP's implementedRequirements) now appear in the
+     sidebar nav family map. Navigate to Control Implementation and expand
+     the new CM family — the provider-only CM-2 surfaces with a ⬡ marker. */
+  it("shows provider-only controls under a new family with the ⬡ marker", async () => {
+    const providerSsp = {
+      metadata: { title: "AWS Commercial Moderate" },  // matches la-1 via titleMatches
+      "system-implementation": { components: [{ uuid: "p", title: "P" }] },
+      "control-implementation": {
+        "implemented-requirements": [{
+          "control-id": "cm-2",  // not in RICH_SSP's IR list
+          "by-components": [{
+            "component-uuid": "p",
+            export: { provided: [{ uuid: "x", description: "provider config baseline" }] },
+          }],
+        }],
+      },
+    };
+    await renderLoaded({
+      leveragedSsps: [{ data: providerSsp, fileName: "p.json" }],
+    });
+    fireEvent.click(screen.getAllByText(/Control Implementation/i)[0]);
+    // The CM family surfaces in the family list (pre-#59 the leveraged
+    // provider's controls were excluded from the family map).
+    await waitFor(() =>
+      expect(
+        screen.queryAllByText((content) => /^CM(\s|$)/i.test(content.trim())).length,
+      ).toBeGreaterThan(0),
+    );
+  });
+
   it("does NOT fall back to all-provider exports when titles don't match (post-#58 fallback removed)", async () => {
     /* Pre-#58 the LeveragedAuthDetailView showed every provider's exports
        when providerCount === 1 even with no title match. #58 removes that
