@@ -465,20 +465,23 @@ function Seed({
   ssp = RICH_SSP,
   catalog = CATALOG,
   withCatalog = true,
+  leveragedSsps = [],
 }: {
   ssp?: any;
   catalog?: Catalog;
   withCatalog?: boolean;
+  leveragedSsps?: { data: unknown; fileName: string }[];
 }) {
-  const { setSsp, setCatalog } = useOscal();
+  const { setSsp, setCatalog, addLeveragedSsp } = useOscal();
   const didSeed = useRef(false);
   useEffect(() => {
     if (!didSeed.current) {
       didSeed.current = true;
       setSsp(ssp, "ssp.json");
       if (withCatalog) setCatalog(catalog, "cat.json");
+      leveragedSsps.forEach((l) => addLeveragedSsp(l.data, l.fileName));
     }
-  }, [ssp, catalog, setSsp, setCatalog, withCatalog]);
+  }, [ssp, catalog, setSsp, setCatalog, withCatalog, leveragedSsps, addLeveragedSsp]);
   return null;
 }
 
@@ -489,6 +492,7 @@ function Harness({
   ssp = RICH_SSP,
   catalog = CATALOG,
   withCatalog = true,
+  leveragedSsps = [],
 }: {
   preload?: boolean;
   mobile?: boolean;
@@ -496,13 +500,21 @@ function Harness({
   ssp?: any;
   catalog?: Catalog;
   withCatalog?: boolean;
+  leveragedSsps?: { data: unknown; fileName: string }[];
 }) {
   stubMatchMedia(mobile);
   return (
     <MemoryRouter initialEntries={[initialPath]}>
       <AuthProvider>
         <OscalProvider>
-          {preload && <Seed ssp={ssp} catalog={catalog} withCatalog={withCatalog} />}
+          {preload && (
+            <Seed
+              ssp={ssp}
+              catalog={catalog}
+              withCatalog={withCatalog}
+              leveragedSsps={leveragedSsps}
+            />
+          )}
           <SspPage />
         </OscalProvider>
       </AuthProvider>
@@ -779,6 +791,189 @@ describe("<SspPage /> loaded — desktop", () => {
     expect(
       screen.getAllByText(/AWS Commercial FedRAMP Moderate/).length,
     ).toBeGreaterThan(0);
+  });
+
+  /* #56 LeveragedAuthDetailView — port from
+     https://github.com/EasyDynamics/oscal-viewer/pull/56. Exercises the new
+     detail view (controls-offered tree, family groups, expand/collapse) and
+     its empty state. */
+
+  it("shows empty-state when a leveraged-auth detail view has no provider SSP loaded", async () => {
+    await renderLoaded();
+    fireEvent.click(screen.getAllByText(/System Implementation/i)[0]);
+    fireEvent.click(screen.getAllByText(/Leveraged/i)[0]);
+    // Click the la-1 entry (AWS Commercial FedRAMP Moderate) — has no
+    // leveragedSsps loaded, so the empty-state copy should appear.
+    fireEvent.click(screen.getAllByText(/AWS Commercial FedRAMP Moderate/)[0]);
+    await waitFor(() =>
+      expect(
+        screen.queryAllByText(/No provider SSP loaded for this authorization/).length,
+      ).toBeGreaterThan(0),
+    );
+  });
+
+  it("shows controls-offered tree when a matching provider SSP is loaded", async () => {
+    /* Provider SSP whose title contains "AWS" so it title-matches the
+       leveraged-auth "AWS Commercial FedRAMP Moderate". Exports two
+       controls (ac-2, au-2) under one component. */
+    const providerSsp = {
+      "system-security-plan": {
+        metadata: { title: "AWS Provider SSP" },
+        "system-implementation": {
+          components: [{ uuid: "p-comp-1", title: "IAM Service" }],
+        },
+        "control-implementation": {
+          "implemented-requirements": [
+            {
+              "control-id": "ac-2",
+              "by-components": [{
+                "component-uuid": "p-comp-1",
+                export: {
+                  description: "Account management exported",
+                  provided: [{ uuid: "prov-aws-1", description: "Authentication" }],
+                  responsibilities: [{ uuid: "resp-aws-1", description: "Customer MFA config" }],
+                },
+              }],
+            },
+            {
+              "control-id": "au-2",
+              "by-components": [{
+                "component-uuid": "p-comp-1",
+                export: {
+                  provided: [{ uuid: "prov-aws-2", description: "Logging" }],
+                },
+              }],
+            },
+          ],
+        },
+      },
+    };
+
+    await renderLoaded({
+      leveragedSsps: [{ data: providerSsp, fileName: "aws-provider.json" }],
+    });
+
+    fireEvent.click(screen.getAllByText(/System Implementation/i)[0]);
+    fireEvent.click(screen.getAllByText(/Leveraged/i)[0]);
+    fireEvent.click(screen.getAllByText(/AWS Commercial FedRAMP Moderate/)[0]);
+
+    // Controls Offered card with count surfaces.
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Controls Offered/).length).toBeGreaterThan(0),
+    );
+
+    // Family rows: AC and AU should render (the two control IDs span 2 families).
+    expect(screen.queryAllByText(/^AC$/).length).toBeGreaterThan(0);
+    expect(screen.queryAllByText(/^AU$/).length).toBeGreaterThan(0);
+
+    // Expand the AC family — clicking the family row reveals ac-2.
+    fireEvent.click(screen.getAllByText(/^AC$/)[0]);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/ac-2/i).length).toBeGreaterThan(0),
+    );
+
+    // Expand the ac-2 control row → reveal provider component + provided/responsibility entries.
+    fireEvent.click(screen.getAllByText(/ac-2/i)[0]);
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Authentication|Customer MFA config|IAM Service/i).length).toBeGreaterThan(0),
+    );
+  });
+
+  /* BUG: empty leveraged-auth title matches every provider via the
+     bidirectional substring containment in LeveragedAuthDetailView
+     (`titleLower.includes("")` is always true, and any provider title also
+     `.includes("")`). Locked in here per the lock-in-before-fix discipline.
+     Upstream #61 ("enhance title matching to reduce false positives")
+     should flip this assertion when ported. */
+  it("BUG: empty leveraged-auth title matches every provider (locked in until upstream #61)", async () => {
+    /* Two providers, neither title-matching the bare-title la — but the
+       empty-string substring match catches both. With >1 providers, the
+       single-provider fallback also doesn't apply. */
+    const providerA = {
+      metadata: { title: "Alpha Cloud" },
+      "system-implementation": { components: [{ uuid: "ca", title: "A-comp" }] },
+      "control-implementation": {
+        "implemented-requirements": [{
+          "control-id": "ac-2",
+          "by-components": [{
+            "component-uuid": "ca",
+            export: { provided: [{ uuid: "p-a", description: "alpha provided" }] },
+          }],
+        }],
+      },
+    };
+    const providerB = {
+      metadata: { title: "Beta Systems" },
+      "system-implementation": { components: [{ uuid: "cb", title: "B-comp" }] },
+      "control-implementation": {
+        "implemented-requirements": [{
+          "control-id": "au-2",
+          "by-components": [{
+            "component-uuid": "cb",
+            export: { provided: [{ uuid: "p-b", description: "beta provided" }] },
+          }],
+        }],
+      },
+    };
+
+    await renderLoaded({
+      leveragedSsps: [
+        { data: providerA, fileName: "a.json" },
+        { data: providerB, fileName: "b.json" },
+      ],
+    });
+
+    fireEvent.click(screen.getAllByText(/System Implementation/i)[0]);
+    fireEvent.click(screen.getAllByText(/Leveraged/i)[0]);
+    // la-bare has no title (parses to ""). Find it by its uuid-prefix label.
+    const bareNav = screen
+      .getAllByText(/la-bare/i)
+      .find((el) => el.tagName !== "DIV");
+    fireEvent.click(bareNav ?? screen.getAllByText(/la-bare/i)[0]);
+
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Controls Offered/).length).toBeGreaterThan(0),
+    );
+    // Both providers' families are listed even though neither title matches
+    // the bare la's empty title — the bug.
+    expect(screen.queryAllByText(/^AC$/).length).toBeGreaterThan(0);
+    expect(screen.queryAllByText(/^AU$/).length).toBeGreaterThan(0);
+  });
+
+  it("falls back to showing all provider exports when only one provider is loaded (no title match)", async () => {
+    /* Provider SSP whose title doesn't substring-match any leveraged-auth title,
+       but providerCount === 1 so it should still surface for la-1's detail view. */
+    const providerSsp = {
+      metadata: { title: "Some Unrelated Provider" },
+      "system-implementation": {
+        components: [{ uuid: "c-x", title: "Service X" }],
+      },
+      "control-implementation": {
+        "implemented-requirements": [{
+          "control-id": "cm-1",
+          "by-components": [{
+            "component-uuid": "c-x",
+            export: {
+              provided: [{ uuid: "p-x", description: "config baseline" }],
+            },
+          }],
+        }],
+      },
+    };
+
+    await renderLoaded({
+      leveragedSsps: [{ data: providerSsp, fileName: "x.json" }],
+    });
+
+    fireEvent.click(screen.getAllByText(/System Implementation/i)[0]);
+    fireEvent.click(screen.getAllByText(/Leveraged/i)[0]);
+    fireEvent.click(screen.getAllByText(/AWS Commercial FedRAMP Moderate/)[0]);
+
+    // Even though the title doesn't match, single-provider fallback fires.
+    await waitFor(() =>
+      expect(screen.queryAllByText(/Controls Offered/).length).toBeGreaterThan(0),
+    );
+    expect(screen.queryAllByText(/^CM$/).length).toBeGreaterThan(0);
   });
 
   it("drills into the second component (ssp-comp-1)", async () => {
