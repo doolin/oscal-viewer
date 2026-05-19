@@ -815,12 +815,13 @@ describe("<SspPage /> loaded — desktop", () => {
   });
 
   it("shows controls-offered tree when a matching provider SSP is loaded", async () => {
-    /* Provider SSP whose title contains "AWS" so it title-matches the
-       leveraged-auth "AWS Commercial FedRAMP Moderate". Exports two
-       controls (ac-2, au-2) under one component. */
+    /* Provider SSP title must match la "AWS Commercial FedRAMP Moderate"
+       under the post-#58 titleMatches() (containment OR ≥2 non-stopword
+       token overlap). "AWS Commercial Moderate Authorization Boundary"
+       shares { aws, commercial, moderate } → matches. */
     const providerSsp = {
       "system-security-plan": {
-        metadata: { title: "AWS Provider SSP" },
+        metadata: { title: "AWS Commercial Moderate Authorization Boundary" },
         "system-implementation": {
           components: [{ uuid: "p-comp-1", title: "IAM Service" }],
         },
@@ -859,9 +860,9 @@ describe("<SspPage /> loaded — desktop", () => {
     fireEvent.click(screen.getAllByText(/Leveraged/i)[0]);
     fireEvent.click(screen.getByRole("heading", { level: 4, name: /AWS Commercial FedRAMP Moderate/ }));
 
-    // Controls Offered card with count surfaces.
+    // Controls Offered (>=1) — the title-match landed.
     await waitFor(() =>
-      expect(screen.queryAllByText(/Controls Offered/).length).toBeGreaterThan(0),
+      expect(screen.queryAllByText(/Controls Offered \([1-9]\d*\)/).length).toBeGreaterThan(0),
     );
 
     // Family rows: AC and AU should render (the two control IDs span 2 families).
