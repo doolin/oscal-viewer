@@ -802,9 +802,11 @@ describe("<SspPage /> loaded — desktop", () => {
     await renderLoaded();
     fireEvent.click(screen.getAllByText(/System Implementation/i)[0]);
     fireEvent.click(screen.getAllByText(/Leveraged/i)[0]);
-    // Click the la-1 entry (AWS Commercial FedRAMP Moderate) — has no
-    // leveragedSsps loaded, so the empty-state copy should appear.
-    fireEvent.click(screen.getAllByText(/AWS Commercial FedRAMP Moderate/)[0]);
+    // The new LeveragedView renders the la.title in multiple places (system
+    // map + connections-edges + nav sidebar + la card). Only the <h4> in
+    // the la card is wrapped in the clickable navigate div, so target it.
+    const titleH4s = document.querySelectorAll("h4");
+    fireEvent.click(titleH4s[0]);  // la-1
     await waitFor(() =>
       expect(
         screen.queryAllByText(/No provider SSP loaded for this authorization/).length,
@@ -813,12 +815,13 @@ describe("<SspPage /> loaded — desktop", () => {
   });
 
   it("shows controls-offered tree when a matching provider SSP is loaded", async () => {
-    /* Provider SSP whose title contains "AWS" so it title-matches the
-       leveraged-auth "AWS Commercial FedRAMP Moderate". Exports two
-       controls (ac-2, au-2) under one component. */
+    /* Provider SSP title must match la "AWS Commercial FedRAMP Moderate"
+       under the post-#58 titleMatches() (containment OR ≥2 non-stopword
+       token overlap). "AWS Commercial Moderate Authorization Boundary"
+       shares { aws, commercial, moderate } → matches. */
     const providerSsp = {
       "system-security-plan": {
-        metadata: { title: "AWS Provider SSP" },
+        metadata: { title: "AWS Commercial Moderate Authorization Boundary" },
         "system-implementation": {
           components: [{ uuid: "p-comp-1", title: "IAM Service" }],
         },
@@ -855,11 +858,13 @@ describe("<SspPage /> loaded — desktop", () => {
 
     fireEvent.click(screen.getAllByText(/System Implementation/i)[0]);
     fireEvent.click(screen.getAllByText(/Leveraged/i)[0]);
-    fireEvent.click(screen.getAllByText(/AWS Commercial FedRAMP Moderate/)[0]);
+    // Click la-1's h4 title (wrapped in the clickable navigate div).
+    const titleH4s = document.querySelectorAll("h4");
+    fireEvent.click(titleH4s[0]);
 
-    // Controls Offered card with count surfaces.
+    // Controls Offered (>=1) — the title-match landed.
     await waitFor(() =>
-      expect(screen.queryAllByText(/Controls Offered/).length).toBeGreaterThan(0),
+      expect(screen.queryAllByText(/Controls Offered \([1-9]\d*\)/).length).toBeGreaterThan(0),
     );
 
     // Family rows: AC and AU should render (the two control IDs span 2 families).
@@ -879,13 +884,12 @@ describe("<SspPage /> loaded — desktop", () => {
     );
   });
 
-  /* BUG: empty leveraged-auth title matches every provider via the
-     bidirectional substring containment in LeveragedAuthDetailView
-     (`titleLower.includes("")` is always true, and any provider title also
-     `.includes("")`). Locked in here per the lock-in-before-fix discipline.
-     Upstream #61 ("enhance title matching to reduce false positives")
-     should flip this assertion when ported. */
-  it("BUG: empty leveraged-auth title matches every provider (locked in until upstream #61)", async () => {
+  /* Lock-in flip: the empty-title-matches-every-provider bug from #56 is
+     fixed by the new titleMatches() introduced in #58 (cleans + tokenizes;
+     returns false when either side is empty after cleaning). This test
+     was asserting the buggy behavior; assertion below is now flipped to
+     the fixed behavior. */
+  it("empty leveraged-auth title matches NO providers (post-#58 titleMatches fix)", async () => {
     /* Two providers, neither title-matching the bare-title la — but the
        empty-string substring match catches both. With >1 providers, the
        single-provider fallback also doesn't apply. */
@@ -925,24 +929,24 @@ describe("<SspPage /> loaded — desktop", () => {
 
     fireEvent.click(screen.getAllByText(/System Implementation/i)[0]);
     fireEvent.click(screen.getAllByText(/Leveraged/i)[0]);
-    // la-bare has no title (parses to ""). Find it by its uuid-prefix label.
-    const bareNav = screen
-      .getAllByText(/la-bare/i)
-      .find((el) => el.tagName !== "DIV");
-    fireEvent.click(bareNav ?? screen.getAllByText(/la-bare/i)[0]);
+    // la-bare is index 1 in the fixture.
+    const titleH4s = document.querySelectorAll("h4");
+    fireEvent.click(titleH4s[1]);
 
+    // Controls Offered renders with count 0 — the new titleMatches()
+    // rejects empty-string inputs after cleaning.
     await waitFor(() =>
-      expect(screen.queryAllByText(/Controls Offered/).length).toBeGreaterThan(0),
+      expect(screen.queryAllByText(/Controls Offered \(0\)/).length).toBeGreaterThan(0),
     );
-    // Both providers' families are listed even though neither title matches
-    // the bare la's empty title — the bug.
-    expect(screen.queryAllByText(/^AC$/).length).toBeGreaterThan(0);
-    expect(screen.queryAllByText(/^AU$/).length).toBeGreaterThan(0);
+    // No family rows surface — empty-title matches no provider exports.
+    expect(screen.queryAllByText(/^AC$/).length).toBe(0);
+    expect(screen.queryAllByText(/^AU$/).length).toBe(0);
   });
 
-  it("falls back to showing all provider exports when only one provider is loaded (no title match)", async () => {
-    /* Provider SSP whose title doesn't substring-match any leveraged-auth title,
-       but providerCount === 1 so it should still surface for la-1's detail view. */
+  it("does NOT fall back to all-provider exports when titles don't match (post-#58 fallback removed)", async () => {
+    /* Pre-#58 the LeveragedAuthDetailView showed every provider's exports
+       when providerCount === 1 even with no title match. #58 removes that
+       single-provider fallback in favor of strict titleMatches(). */
     const providerSsp = {
       metadata: { title: "Some Unrelated Provider" },
       "system-implementation": {
@@ -967,13 +971,13 @@ describe("<SspPage /> loaded — desktop", () => {
 
     fireEvent.click(screen.getAllByText(/System Implementation/i)[0]);
     fireEvent.click(screen.getAllByText(/Leveraged/i)[0]);
-    fireEvent.click(screen.getAllByText(/AWS Commercial FedRAMP Moderate/)[0]);
+    const titleH4s = document.querySelectorAll("h4");
+    fireEvent.click(titleH4s[0]);
 
-    // Even though the title doesn't match, single-provider fallback fires.
     await waitFor(() =>
-      expect(screen.queryAllByText(/Controls Offered/).length).toBeGreaterThan(0),
+      expect(screen.queryAllByText(/Controls Offered \(0\)/).length).toBeGreaterThan(0),
     );
-    expect(screen.queryAllByText(/^CM$/).length).toBeGreaterThan(0);
+    expect(screen.queryAllByText(/^CM$/).length).toBe(0);
   });
 
   it("drills into the second component (ssp-comp-1)", async () => {

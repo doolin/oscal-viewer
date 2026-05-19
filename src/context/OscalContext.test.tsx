@@ -187,6 +187,19 @@ describe("<OscalProvider> leveragedSsps slot", () => {
     expect(result.current.leveragedSsps[0].data).toEqual({ a: 1 });
   });
 
+  /* #58 added sourceUrl-keyed dedup: a second add with the same sourceUrl
+     but a different fileName is also rejected (so the auto-resolver fetch
+     doesn't double-add a provider that was already uploaded by file).
+     Port of https://github.com/EasyDynamics/oscal-viewer/pull/58 */
+  it("addLeveragedSsp is idempotent on sourceUrl collision (different fileName)", () => {
+    const { result } = renderHook(() => useOscal(), { wrapper });
+    act(() => result.current.addLeveragedSsp({ a: 1 }, "first.json", "https://example.com/p.json"));
+    act(() => result.current.addLeveragedSsp({ a: 2 }, "second.json", "https://example.com/p.json"));
+
+    expect(result.current.leveragedSsps).toHaveLength(1);
+    expect(result.current.leveragedSsps[0].fileName).toBe("first.json");
+  });
+
   it("removeLeveragedSsp filters by fileName", () => {
     const { result } = renderHook(() => useOscal(), { wrapper });
     act(() => result.current.addLeveragedSsp({ a: 1 }, "p1.json"));
