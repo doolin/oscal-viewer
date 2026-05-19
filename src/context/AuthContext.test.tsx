@@ -229,39 +229,80 @@ describe("authFetch()", () => {
     expect(calledOpts.signal).toBe(ctrl.signal);
   });
 
-  it("in dev, POSTs to /__proxy with token in JSON body", async () => {
+  /* The token path now gates credentials + proxy on isOscalApiOrigin (api.oscal.io).
+     Third-party hosts get a bare fetch — see #55:
+     https://github.com/EasyDynamics/oscal-viewer/pull/55 */
+
+  it("in dev, POSTs to /__proxy with token in JSON body (api.oscal.io URL)", async () => {
     vi.stubEnv("DEV", true);
-    await authFetch("https://example.com/x.json", VALID_JWS);
+    await authFetch("https://api.oscal.io/x.json", VALID_JWS);
     const [url, opts] = (fetchMock as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(url).toBe("/__proxy");
     expect(opts.method).toBe("POST");
     const parsed = JSON.parse(opts.body as string);
     expect(parsed).toEqual({
-      url: "https://example.com/x.json",
+      url: "https://api.oscal.io/x.json",
       headers: { Authorization: `Bearer ${VALID_JWS}` },
     });
   });
 
-  it("in dev, sends credentials so the proxy can attach session cookies", async () => {
+  it("in dev, sends credentials to the proxy when target is api.oscal.io", async () => {
     vi.stubEnv("DEV", true);
-    await authFetch("https://example.com/x.json", VALID_JWS);
+    await authFetch("https://api.oscal.io/x.json", VALID_JWS);
     const [, opts] = (fetchMock as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(opts.credentials).toBe("include");
   });
 
-  it("in prod, calls the URL directly with an Authorization header", async () => {
+  it("in prod, calls api.oscal.io directly with an Authorization header", async () => {
     vi.stubEnv("DEV", false);
-    await authFetch("https://example.com/x.json", VALID_JWS);
+    await authFetch("https://api.oscal.io/x.json", VALID_JWS);
     const [url, opts] = (fetchMock as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(url).toBe("https://example.com/x.json");
+    expect(url).toBe("https://api.oscal.io/x.json");
     expect(opts.headers).toEqual({ Authorization: `Bearer ${VALID_JWS}` });
     expect(opts.method).toBeUndefined();
   });
 
-  it("in prod, sends credentials so the registry receives session cookies", async () => {
+  it("in prod, sends credentials to api.oscal.io so it receives session cookies", async () => {
     vi.stubEnv("DEV", false);
-    await authFetch("https://example.com/x.json", VALID_JWS);
+    await authFetch("https://api.oscal.io/x.json", VALID_JWS);
     const [, opts] = (fetchMock as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(opts.credentials).toBe("include");
+  });
+
+  /* New branches added by #55: third-party hosts skip the proxy / Authorization /
+     credentials entirely (their CORS responds with `Access-Control-Allow-Origin: *`
+     which is incompatible with credentialed requests). */
+
+  it("with token + third-party URL, falls back to a bare fetch (no proxy, no auth header)", async () => {
+    vi.stubEnv("DEV", true);
+    await authFetch("https://example.com/x.json", VALID_JWS);
+    const [url, opts] = (fetchMock as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe("https://example.com/x.json");
+    expect(opts).not.toHaveProperty("headers");
+    expect(opts).not.toHaveProperty("credentials");
+    expect(opts.method).toBeUndefined();
+  });
+
+  it("with token + third-party URL in prod, also falls back to a bare fetch", async () => {
+    vi.stubEnv("DEV", false);
+    await authFetch("https://example.com/x.json", VALID_JWS);
+    const [url, opts] = (fetchMock as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe("https://example.com/x.json");
+    expect(opts).not.toHaveProperty("headers");
+    expect(opts).not.toHaveProperty("credentials");
+  });
+
+  it("without token + api.oscal.io URL, sends credentials for cookie-based auth", async () => {
+    await authFetch("https://api.oscal.io/x.json", null);
+    const [, opts] = (fetchMock as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(opts.credentials).toBe("include");
+  });
+
+  it("treats unparseable URL strings as non-api (bare fetch path)", async () => {
+    await authFetch("not a url", VALID_JWS);
+    const [url, opts] = (fetchMock as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(url).toBe("not a url");
+    expect(opts).not.toHaveProperty("credentials");
+    expect(opts).not.toHaveProperty("headers");
   });
 });
