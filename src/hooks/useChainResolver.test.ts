@@ -13,11 +13,19 @@ import {
   extractProfileFromSsp,
   extractSspFromAp,
   useChainResolver,
+  completedChainAttempts,
   AP_CHAIN,
   PROFILE_CHAIN,
   type ChainLink,
 } from "./useChainResolver";
 import type { BackMatterResource } from "./useImportResolver";
+
+/* The completedChainAttempts cache is module-scoped and persists across
+   tests. Clear it before each test so one test's success doesn't
+   short-circuit the next. */
+beforeEach(() => {
+  completedChainAttempts.clear();
+});
 
 /* ═════════════════════════════════════════════════════════════════════
    Extractors (preserved from round 2)
@@ -907,6 +915,63 @@ describe("useChainResolver() — multi-step chain", () => {
     expect(result.current.steps[0].error).toMatch(
       /does not appear to be a valid OSCAL profile/,
     );
+  });
+});
+
+/* ─────────── #60 cache lock-in ─────────── */
+
+/* BUG: the completedChainAttempts cache is module-scoped and never
+   pruned in production. Once a chain attempt completes (success OR
+   error), any subsequent hook mount with the same (initialHref +
+   baseUrl + token + chain.modelKeys) key is short-circuited to idle
+   without re-fetching — including after the user clears + reloads
+   the same SSP, or after a transient auth/network failure they'd
+   want to retry. Locked in per the lock-in-before-fix discipline
+   (the test clears the cache itself via the top-level beforeEach
+   so it doesn't poison other tests; the lock-in assertion is that
+   the cache contains the attempt key after the chain completes). */
+describe("useChainResolver() — BUG: completedChainAttempts never clears", () => {
+  it("retains the attempt key in the cache after a chain completes", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(jsonResponse({ catalog: { metadata: {} } })),
+    );
+    const { result } = renderChain({
+      initialHref: "https://example.com/never-clear.json",
+    });
+    await waitFor(() =>
+      expect(result.current.steps[0].status).toBe("success"),
+    );
+    // After completion, the module-level cache holds the attempt key.
+    // Nothing in the hook unmount or "clear SSP" flow clears this
+    // Set — that's the bug.
+    expect(completedChainAttempts.size).toBeGreaterThan(0);
+  });
+
+  it("short-circuits a fresh hook to idle when the same key is in the cache", async () => {
+    // First mount: completes the chain and populates the cache.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(jsonResponse({ catalog: { metadata: {} } })),
+    );
+    const first = renderChain({
+      initialHref: "https://example.com/lock-in.json",
+    });
+    await waitFor(() => expect(first.result.current.steps[0].status).toBe("success"));
+    first.unmount();
+    vi.unstubAllGlobals();
+
+    // Second mount with the same key. Even with no fetch mock at all,
+    // the cache-hit path short-circuits the effect and never calls fetch.
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const second = renderChain({
+      initialHref: "https://example.com/lock-in.json",
+    });
+    // Give the effect a moment to no-op.
+    await new Promise((r) => setTimeout(r, 20));
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(second.result.current.steps[0].status).toBe("idle");
   });
 });
 
