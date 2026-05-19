@@ -156,3 +156,61 @@ describe("<OscalProvider> slot round-trips", () => {
     });
   }
 });
+
+/* #56 leveragedSsps slot — array-of-entries, not single-entry; uses
+   add/remove/clear instead of set/clear. Port of
+   https://github.com/EasyDynamics/oscal-viewer/pull/56 */
+describe("<OscalProvider> leveragedSsps slot", () => {
+  it("starts empty", () => {
+    const { result } = renderHook(() => useOscal(), { wrapper });
+    expect(result.current.leveragedSsps).toEqual([]);
+  });
+
+  it("addLeveragedSsp appends a new entry", () => {
+    const { result } = renderHook(() => useOscal(), { wrapper });
+    act(() => result.current.addLeveragedSsp({ a: 1 }, "provider1.json"));
+    act(() => result.current.addLeveragedSsp({ b: 2 }, "provider2.json"));
+
+    expect(result.current.leveragedSsps).toHaveLength(2);
+    expect(result.current.leveragedSsps[0].fileName).toBe("provider1.json");
+    expect(result.current.leveragedSsps[0].data).toEqual({ a: 1 });
+    expect(result.current.leveragedSsps[1].fileName).toBe("provider2.json");
+  });
+
+  it("addLeveragedSsp is idempotent on fileName collision (does not append a duplicate)", () => {
+    const { result } = renderHook(() => useOscal(), { wrapper });
+    act(() => result.current.addLeveragedSsp({ a: 1 }, "same.json"));
+    act(() => result.current.addLeveragedSsp({ a: 2 }, "same.json"));
+
+    expect(result.current.leveragedSsps).toHaveLength(1);
+    // First-write-wins: the second add is dropped, data is unchanged.
+    expect(result.current.leveragedSsps[0].data).toEqual({ a: 1 });
+  });
+
+  it("removeLeveragedSsp filters by fileName", () => {
+    const { result } = renderHook(() => useOscal(), { wrapper });
+    act(() => result.current.addLeveragedSsp({ a: 1 }, "p1.json"));
+    act(() => result.current.addLeveragedSsp({ b: 2 }, "p2.json"));
+    act(() => result.current.removeLeveragedSsp("p1.json"));
+
+    expect(result.current.leveragedSsps).toHaveLength(1);
+    expect(result.current.leveragedSsps[0].fileName).toBe("p2.json");
+  });
+
+  it("removeLeveragedSsp is a no-op when fileName isn't present", () => {
+    const { result } = renderHook(() => useOscal(), { wrapper });
+    act(() => result.current.addLeveragedSsp({ a: 1 }, "p1.json"));
+    act(() => result.current.removeLeveragedSsp("nope.json"));
+
+    expect(result.current.leveragedSsps).toHaveLength(1);
+  });
+
+  it("clearLeveragedSsps empties the array", () => {
+    const { result } = renderHook(() => useOscal(), { wrapper });
+    act(() => result.current.addLeveragedSsp({ a: 1 }, "p1.json"));
+    act(() => result.current.addLeveragedSsp({ b: 2 }, "p2.json"));
+    act(() => result.current.clearLeveragedSsps());
+
+    expect(result.current.leveragedSsps).toEqual([]);
+  });
+});
