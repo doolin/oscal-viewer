@@ -19,7 +19,7 @@ into this fork.
 | [#50](https://github.com/EasyDynamics/oscal-viewer/pull/50) | authFetch credentials | `b4c5e64` | #33 | `b694be1` | ported |
 | [#51](https://github.com/EasyDynamics/oscal-viewer/pull/51) | authFetch credentials follow-up | `97a5132` | #33 | `b694be1` | ported (combined with #50) |
 | [#53](https://github.com/EasyDynamics/oscal-viewer/pull/53) | SSP service-component hierarchy | `e7e8256` | #34 | `3158f23` | ported |
-| [#55](https://github.com/EasyDynamics/oscal-viewer/pull/55) | SSP export support | `51633b5` | — | — | in progress |
+| [#55](https://github.com/EasyDynamics/oscal-viewer/pull/55) | SSP export support | `51633b5` | [#100](https://github.com/doolin/oscal-viewer/pull/100) | `4ddfe8c` | ported |
 | [#56](https://github.com/EasyDynamics/oscal-viewer/pull/56) | Leveraged auth detail view + `useLeveragedIndex` hook | `7b0c4c3` | — | — | pending |
 | [#57](https://github.com/EasyDynamics/oscal-viewer/pull/57) | Catalog sort index | `3c15ee8` | — | — | pending |
 | [#58](https://github.com/EasyDynamics/oscal-viewer/pull/58) | `useLeveragedSspResolver` hook | `503a702` | — | — | pending |
