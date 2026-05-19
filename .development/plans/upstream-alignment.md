@@ -24,7 +24,7 @@ into this fork.
 | [#57](https://github.com/EasyDynamics/oscal-viewer/pull/57) | Catalog sort index | `3c15ee8` | [#102](https://github.com/doolin/oscal-viewer/pull/102) | `8fa81e6` | ported |
 | [#58](https://github.com/EasyDynamics/oscal-viewer/pull/58) | `useLeveragedSspResolver` hook | `503a702` | [#103](https://github.com/doolin/oscal-viewer/pull/103) | `804e552` | ported |
 | [#59](https://github.com/EasyDynamics/oscal-viewer/pull/59) | Leveraged auth improvements + Layout SSP count | `54557dc` | [#104](https://github.com/doolin/oscal-viewer/pull/104) | `d8fa39c` | ported |
-| [#60](https://github.com/EasyDynamics/oscal-viewer/pull/60) | LeveragedAuthDetailView grouping + loading | `18ab2e1` | — | — | pending |
+| [#60](https://github.com/EasyDynamics/oscal-viewer/pull/60) | LeveragedAuthDetailView grouping + loading | `18ab2e1` | [#105](https://github.com/doolin/oscal-viewer/pull/105) | `32e4066` | ported |
 | [#61](https://github.com/EasyDynamics/oscal-viewer/pull/61) | Title matching accuracy | `ec85ff6` | — | — | pending |
 | [#62](https://github.com/EasyDynamics/oscal-viewer/pull/62) | DropZone max width consistency | `6ccafa3` | — | — | pending |
 
