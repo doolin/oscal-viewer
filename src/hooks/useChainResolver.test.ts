@@ -815,6 +815,99 @@ describe("useChainResolver() — multi-step chain", () => {
     expect(result.current.steps[0].status).toBe("success");
     expect(result.current.steps[1].error).toMatch(/HTTP 404/);
   });
+
+  /* Step-skip behavior added by #55:
+     https://github.com/EasyDynamics/oscal-viewer/pull/55 — when import-profile
+     points directly to a catalog (skipping the profile step), the resolver
+     marks intermediate steps as Skipped and continues with the matched step. */
+
+  it("skips an intermediate step when its URL points directly to a later modelKey", async () => {
+    const chain: ChainLink[] = [
+      {
+        label: "Profile",
+        modelKey: "profile",
+        extractNext: () => ({
+          href: "https://example.com/cat.json",
+          backMatter: [],
+        }),
+      },
+      { label: "Catalog", modelKey: "catalog" },
+    ];
+    // The "profile" fetch actually returns a catalog payload.
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ catalog: { metadata: { title: "cat" } } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderChain({
+      initialHref: "https://example.com/profile.json",
+      chain,
+    });
+
+    await waitFor(() =>
+      expect(result.current.steps[1].status).toBe("success"),
+    );
+    expect(result.current.steps[0].status).toBe("success");
+    expect(result.current.steps[0].resolvedLabel).toBe("Skipped");
+    // Only one fetch — the chain stopped after matching the catalog step.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("excludes Skipped steps from the ResolverModal items list", async () => {
+    const chain: ChainLink[] = [
+      {
+        label: "Profile",
+        modelKey: "profile",
+        extractNext: () => ({
+          href: "https://example.com/cat.json",
+          backMatter: [],
+        }),
+      },
+      { label: "Catalog", modelKey: "catalog" },
+    ];
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ catalog: { metadata: {} } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderChain({
+      initialHref: "https://example.com/profile.json",
+      chain,
+    });
+
+    await waitFor(() =>
+      expect(result.current.steps[1].status).toBe("success"),
+    );
+    // Skipped step is filtered from items even though its status is success.
+    expect(result.current.items.map((i) => i.label)).toEqual(["Catalog"]);
+  });
+
+  it("throws the original 'invalid OSCAL X' error when no later step matches either", async () => {
+    const chain: ChainLink[] = [
+      {
+        label: "Profile",
+        modelKey: "profile",
+        extractNext: () => ({ href: null, backMatter: [] }),
+      },
+      { label: "Catalog", modelKey: "catalog" },
+    ];
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ unrelated: 1 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderChain({
+      initialHref: "https://example.com/profile.json",
+      chain,
+    });
+
+    await waitFor(() =>
+      expect(result.current.steps[0].status).toBe("error"),
+    );
+    expect(result.current.steps[0].error).toMatch(
+      /does not appear to be a valid OSCAL profile/,
+    );
+  });
 });
 
 /* ─────────── Items derivation ─────────── */

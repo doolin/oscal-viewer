@@ -325,6 +325,91 @@ const RICH_SSP = {
       // parser arm (L266-291). No control-id, no description, no remarks,
       // no statements, no by-components, no responsible-roles, no links.
       { uuid: "ir-bare" },
+      // Implemented-requirement carrying the #55 export-support shape:
+      // ir-level set-parameters, by-component export block (provided +
+      // responsibilities), inherited and satisfied entries, by-component
+      // set-parameters + responsible-roles. Exercises ByComponentTabs and
+      // the Exports / Inherited / Satisfied tab renderers.
+      {
+        uuid: "ir-exports",
+        "control-id": "ac-2",
+        description: "Account management with shared responsibilities.",
+        "set-parameters": [
+          { "param-id": "ac-2_prm_1", values: ["quarterly"], remarks: "review cadence" },
+        ],
+        statements: [
+          {
+            uuid: "stmt-exports-1",
+            "statement-id": "ac-2_smt.a",
+            description: "Account inventory maintained.",
+            "by-components": [
+              {
+                uuid: "stmt-bc-exports",
+                "component-uuid": "comp-1",
+                description: "Splunk inventories accounts.",
+                export: {
+                  description: "exported to consumer",
+                  provided: [{ uuid: "stmt-prov", description: "stmt-level provided" }],
+                  responsibilities: [{ uuid: "stmt-resp", description: "stmt-level responsibility" }],
+                },
+              },
+            ],
+          },
+        ],
+        "by-components": [
+          {
+            uuid: "bc-exports",
+            "component-uuid": "comp-1",
+            description: "Customer-facing account management.",
+            remarks: "ongoing",
+            "implementation-status": { state: "implemented" },
+            export: {
+              description: "Shared responsibility export.",
+              remarks: "see ATO docs",
+              provided: [
+                {
+                  uuid: "prov-1",
+                  description: "Provider provides authentication.",
+                  remarks: "AWS Cognito",
+                  "responsible-roles": [{ "role-id": "csp", "party-uuids": ["party-1"] }],
+                  links: [{ href: "#evidence" }],
+                },
+              ],
+              responsibilities: [
+                {
+                  uuid: "resp-1",
+                  description: "Customer configures MFA policies.",
+                  remarks: "documented in customer playbook",
+                  "responsible-roles": [{ "role-id": "customer" }],
+                  "provided-uuid": "prov-1",
+                },
+              ],
+            },
+            inherited: [
+              {
+                uuid: "ih-1",
+                description: "Inherited from leveraged authorization.",
+                "provided-uuid": "prov-1",
+                "responsible-roles": [{ "role-id": "csp" }],
+              },
+            ],
+            satisfied: [
+              {
+                uuid: "sat-1",
+                description: "Customer satisfies responsibility via SSO policy.",
+                "responsibility-uuid": "resp-1",
+                "responsible-roles": [{ "role-id": "customer" }],
+                remarks: "verified in last assessment",
+              },
+            ],
+            "set-parameters": [
+              { "param-id": "ac-2_prm_2", values: ["30 days"] },
+            ],
+            "responsible-roles": [{ "role-id": "owner", "party-uuids": ["party-1"] }],
+            links: [{ href: "https://docs.example/ac-2", rel: "reference", text: "AC-2 SOP" }],
+          },
+        ],
+      },
     ],
   },
   "back-matter": {
@@ -751,6 +836,62 @@ describe("<SspPage /> loaded — desktop", () => {
         screen.getAllByText(/Splunk enforces retention/).length,
       ).toBeGreaterThan(0),
     );
+  });
+
+  /* #55 SSP export support — port from
+     https://github.com/EasyDynamics/oscal-viewer/pull/55. Exercises
+     ByComponentTabs disclosure (Exports / Inherited / Satisfied) and the
+     ir-level Set-Parameters card. */
+  it("renders by-component tabs (exports, inherited, satisfied) and ir-level set-parameters", async () => {
+    await renderLoaded();
+    fireEvent.click(screen.getAllByText(/Control Implementation/i)[0]);
+    fireEvent.click(screen.getAllByText(/AC-2|ac-2/i)[0]);
+
+    // ir-level Set Parameters card surfaces both ir param-id and value.
+    await waitFor(() =>
+      expect(screen.getAllByText(/ac-2_prm_1/i).length).toBeGreaterThan(0),
+    );
+    expect(screen.getAllByText(/quarterly/).length).toBeGreaterThan(0);
+
+    // Implementation tab is the default; description is visible.
+    expect(
+      screen.getAllByText(/Customer-facing account management/).length,
+    ).toBeGreaterThan(0);
+
+    // Exports tab — switch and verify provided + responsibilities surface.
+    const exportsTab = screen.getAllByRole("button", { name: /Exports/i })[0];
+    fireEvent.click(exportsTab);
+    await waitFor(() =>
+      expect(screen.getAllByText(/Provider provides authentication/).length).toBeGreaterThan(0),
+    );
+    expect(screen.getAllByText(/Customer configures MFA policies/).length).toBeGreaterThan(0);
+
+    // Inherited tab.
+    const inheritedTab = screen.getAllByRole("button", { name: /Inherited/i })[0];
+    fireEvent.click(inheritedTab);
+    await waitFor(() =>
+      expect(
+        screen.getAllByText(/Inherited from leveraged authorization/).length,
+      ).toBeGreaterThan(0),
+    );
+
+    // Satisfied tab.
+    const satisfiedTab = screen.getAllByRole("button", { name: /Satisfied/i })[0];
+    fireEvent.click(satisfiedTab);
+    await waitFor(() =>
+      expect(
+        screen.getAllByText(/Customer satisfies responsibility via SSO policy/).length,
+      ).toBeGreaterThan(0),
+    );
+
+    // Implementation tab — switch back; set-parameters and responsible-roles
+    // at by-component level render only on the impl tab (and only at "req" size).
+    const implTab = screen.getAllByRole("button", { name: /Implementation/i })[0];
+    fireEvent.click(implTab);
+    await waitFor(() =>
+      expect(screen.getAllByText(/ac-2_prm_2/i).length).toBeGreaterThan(0),
+    );
+    expect(screen.getAllByText(/30 days/).length).toBeGreaterThan(0);
   });
 
   it("renders system-information info-types in System Characteristics", async () => {

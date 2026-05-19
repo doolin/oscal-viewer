@@ -952,6 +952,155 @@ describe("parseSsp()", () => {
     expect(out.controlImplementation.implementedRequirements[0].byComponents[0]
       .implementationStatus).toBe("");
   });
+
+  /* ─── #55 SSP export support — parseByComp / parseSetParams / parseRoles / parseLinks
+       (exercised via parseSsp; helpers themselves are module-private). Ported from
+       https://github.com/EasyDynamics/oscal-viewer/pull/55 ──────────────── */
+
+  it("populates by-component export block (provided + responsibilities)", () => {
+    const out = parseSsp({
+      metadata: {},
+      "control-implementation": {
+        "implemented-requirements": [{
+          uuid: "ir1",
+          "by-components": [{
+            "component-uuid": "c1",
+            export: {
+              description: "exported scope",
+              remarks: "export remarks",
+              provided: [{
+                uuid: "prov-1",
+                description: "provided capability",
+                remarks: "p remarks",
+                "responsible-roles": [{ "role-id": "csp", "party-uuids": ["p1"] }],
+                props: [{ name: "x", value: "y" }],
+                links: [{ href: "#a" }],
+              }],
+              responsibilities: [{
+                uuid: "resp-1",
+                description: "customer responsibility",
+                remarks: "r remarks",
+                "responsible-roles": [{ "role-id": "customer" }],
+                "provided-uuid": "prov-1",
+              }],
+            },
+          }],
+        }],
+      },
+    });
+    const bc = out.controlImplementation.implementedRequirements[0].byComponents[0];
+    expect(bc.export?.description).toBe("exported scope");
+    expect(bc.export?.provided[0].uuid).toBe("prov-1");
+    expect(bc.export?.provided[0].responsibleRoles[0].roleId).toBe("csp");
+    expect(bc.export?.provided[0].links[0].href).toBe("#a");
+    expect(bc.export?.responsibilities[0].providedUuid).toBe("prov-1");
+    expect(bc.export?.responsibilities[0].responsibleRoles[0].partyUuids).toEqual([]);
+  });
+
+  it("leaves bc.export undefined when the export key is absent", () => {
+    const out = parseSsp({
+      metadata: {},
+      "control-implementation": {
+        "implemented-requirements": [{
+          uuid: "ir1",
+          "by-components": [{ "component-uuid": "c1" }],
+        }],
+      },
+    });
+    expect(out.controlImplementation.implementedRequirements[0].byComponents[0].export).toBeUndefined();
+  });
+
+  it("populates by-component inherited + satisfied entries", () => {
+    const out = parseSsp({
+      metadata: {},
+      "control-implementation": {
+        "implemented-requirements": [{
+          uuid: "ir1",
+          "by-components": [{
+            "component-uuid": "c1",
+            inherited: [{
+              uuid: "ih-1",
+              description: "inherited from parent",
+              "provided-uuid": "prov-X",
+              "responsible-roles": [{ "role-id": "csp" }],
+            }],
+            satisfied: [{
+              uuid: "sat-1",
+              description: "satisfied response",
+              "responsibility-uuid": "resp-X",
+              "responsible-roles": [{ "role-id": "customer" }],
+              remarks: "sat remarks",
+            }],
+          }],
+        }],
+      },
+    });
+    const bc = out.controlImplementation.implementedRequirements[0].byComponents[0];
+    expect(bc.inherited[0].providedUuid).toBe("prov-X");
+    expect(bc.inherited[0].responsibleRoles[0].roleId).toBe("csp");
+    expect(bc.satisfied[0].responsibilityUuid).toBe("resp-X");
+    expect(bc.satisfied[0].remarks).toBe("sat remarks");
+  });
+
+  it("populates set-parameters at by-component AND ir level", () => {
+    const out = parseSsp({
+      metadata: {},
+      "control-implementation": {
+        "implemented-requirements": [{
+          uuid: "ir1",
+          "set-parameters": [
+            { "param-id": "ac-1_prm_1", values: ["weekly"], remarks: "freq" },
+            {},  // → all defaults
+          ],
+          "by-components": [{
+            "component-uuid": "c1",
+            "set-parameters": [{ "param-id": "ac-1_prm_2", values: ["v"] }],
+          }],
+        }],
+      },
+    });
+    const ir = out.controlImplementation.implementedRequirements[0];
+    expect(ir.setParameters).toHaveLength(2);
+    expect(ir.setParameters[0]).toEqual({
+      paramId: "ac-1_prm_1", values: ["weekly"], remarks: "freq",
+    });
+    expect(ir.setParameters[1]).toEqual({ paramId: "", values: [], remarks: "" });
+    expect(ir.byComponents[0].setParameters[0].paramId).toBe("ac-1_prm_2");
+  });
+
+  it("populates by-component links and responsible-roles", () => {
+    const out = parseSsp({
+      metadata: {},
+      "control-implementation": {
+        "implemented-requirements": [{
+          uuid: "ir1",
+          "by-components": [{
+            "component-uuid": "c1",
+            links: [{ href: "#evidence", rel: "evidence", text: "see log" }],
+            "responsible-roles": [{ "role-id": "owner", "party-uuids": ["p1"] }],
+          }],
+        }],
+      },
+    });
+    const bc = out.controlImplementation.implementedRequirements[0].byComponents[0];
+    expect(bc.links[0]).toEqual({ href: "#evidence", rel: "evidence", text: "see log" });
+    expect(bc.responsibleRoles[0]).toEqual({ roleId: "owner", partyUuids: ["p1"] });
+  });
+
+  it("populates component.responsibleRoles (system-implementation)", () => {
+    const out = parseSsp({
+      metadata: {},
+      "system-implementation": {
+        components: [{
+          uuid: "c1",
+          "responsible-roles": [{ "role-id": "owner", "party-uuids": ["p1"] }],
+        }],
+      },
+    });
+    expect(out.systemImplementation.components[0].responsibleRoles[0]).toEqual({
+      roleId: "owner", partyUuids: ["p1"],
+    });
+  });
 });
 
 /* ─── renderMarkup — markdown → HTML with bare-<p> unwrap ──────────── */
