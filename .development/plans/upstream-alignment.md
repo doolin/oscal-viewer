@@ -22,7 +22,7 @@ into this fork.
 | [#55](https://github.com/EasyDynamics/oscal-viewer/pull/55) | SSP export support | `51633b5` | [#100](https://github.com/doolin/oscal-viewer/pull/100) | `4ddfe8c` | ported |
 | [#56](https://github.com/EasyDynamics/oscal-viewer/pull/56) | Leveraged auth detail view + `useLeveragedIndex` hook | `7b0c4c3` | [#101](https://github.com/doolin/oscal-viewer/pull/101) | `12be58d` | ported |
 | [#57](https://github.com/EasyDynamics/oscal-viewer/pull/57) | Catalog sort index | `3c15ee8` | [#102](https://github.com/doolin/oscal-viewer/pull/102) | `8fa81e6` | ported |
-| [#58](https://github.com/EasyDynamics/oscal-viewer/pull/58) | `useLeveragedSspResolver` hook | `503a702` | — | — | pending |
+| [#58](https://github.com/EasyDynamics/oscal-viewer/pull/58) | `useLeveragedSspResolver` hook | `503a702` | [#103](https://github.com/doolin/oscal-viewer/pull/103) | `804e552` | ported |
 | [#59](https://github.com/EasyDynamics/oscal-viewer/pull/59) | Leveraged auth improvements + Layout SSP count | `54557dc` | — | — | pending |
 | [#60](https://github.com/EasyDynamics/oscal-viewer/pull/60) | LeveragedAuthDetailView grouping + loading | `18ab2e1` | — | — | pending |
 | [#61](https://github.com/EasyDynamics/oscal-viewer/pull/61) | Title matching accuracy | `ec85ff6` | — | — | pending |
