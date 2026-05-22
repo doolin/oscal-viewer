@@ -35,7 +35,7 @@ campaign waits.
 # All should match exactly:
 git status                                                   # clean
 git rev-parse --abbrev-ref HEAD                              # rebase-test
-git rev-list --left-right --count upstream/main...rebase-test  # 0 116
+git rev-list --left-right --count upstream/main...rebase-test  # 0 117
 gh pr view 64 --repo EasyDynamics/oscal-viewer --json state,mergeCommit --jq '.state'
 gh pr view 65 --repo EasyDynamics/oscal-viewer --json state,mergeCommit --jq '.state'
 
@@ -98,9 +98,9 @@ something happened that needs explanation.
 
 | Metric | Value |
 |---|---|
-| `rebase-test` HEAD | `1d3362b` |
+| `rebase-test` HEAD | `5f093fa` |
 | `upstream/main` HEAD | `53712ae` |
-| Commits on rebase-test ahead of upstream | 116 |
+| Commits on rebase-test ahead of upstream | 117 |
 | Test files | 44 |
 | Tests passing | 1826 |
 | Tests skipped | 2 |
