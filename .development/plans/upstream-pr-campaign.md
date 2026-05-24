@@ -3,73 +3,127 @@
 Running log of PRs sent upstream. Each row should be quick to scan: link,
 what it contains, status, and any lesson learned during the send.
 
+## Strategic frame (updated 2026-05-24)
+
+The campaign is now framed as an **influence-behavior experiment** with
+a **15-20 PR threshold** for real evidence of behavior change in
+`pjavan` (the active upstream collaborator). The asymmetric value
+reality is acknowledged: pjavan is doing public, risky OSCAL adoption
+advocacy; we are doing quiet engineering. Two different roles.
+
+See `feedback_upstream_influence_experiment.md` in memory for the full
+frame and signal-tracking criteria.
+
+**Implication for future PRs:** prefer Tier 1 bug fixes (real user
+crashes, semantic spec violations) and *mechanism* PRs (CI gates that
+enforce discipline) over coverage-expansion PRs. Coverage on our fork
+stays local unless the target file is genuinely low-churn AND the test
+encodes a useful invariant.
+
 ## Process
 
 1. Branch off `upstream/main` (`contrib/<slug>`)
 2. Cherry-pick or hand-write the relevant change
 3. Strip fork-specific noise (e.g. `.development/` `.gitignore` entries,
    `.claude/` config, `.development/plans/` files)
-4. Push to `doolin/oscal-viewer`
-5. `gh pr create --repo EasyDynamics/oscal-viewer --base main --head doolin:<branch>`
-6. Record in the table below
+4. Verify against upstream by running `npm install && npm test -- --run`
+5. Push to `doolin/oscal-viewer` (`origin`, NOT `upstream`)
+6. `gh pr create --repo EasyDynamics/oscal-viewer --base main --head doolin:<branch>`
+7. Record in the table below
 
 ## PRs
 
-| # | Branch | Origin commit (rebase-test) | What | Status | Notes |
-|---|---|---|---|---|---|
-| [#64](https://github.com/EasyDynamics/oscal-viewer/pull/64) | `contrib/oscal-samples` | `fe30ba9` (now `aca8e28`) | 7 NIST canonical OSCAL sample JSON files in `samples/` | open | Dropped the `.gitignore` `.development/` ignore hunk — fork-specific noise. |
-| [#65](https://github.com/EasyDynamics/oscal-viewer/pull/65) | `contrib/vitest-harness` | `6b68251` (now `6fe7c38`) | Vitest config + setup + 2 smoke tests + CI workflow + package.json deps | open | Dropped the `.development/plans/test-coverage.md` modification (DU conflict — file doesn't exist upstream, was fork-only working notes). 7 files, +1412 / -58. Verified `npm ci && npm test` clean before push. |
+| # | Branch | What | Status | Notes |
+|---|---|---|---|---|
+| [#64](https://github.com/EasyDynamics/oscal-viewer/pull/64) | `contrib/oscal-samples` | 7 NIST canonical OSCAL sample JSON files in `samples/` | **merged 2026-05-24** as `b1522a0` | Dropped `.gitignore` `.development/` ignore hunk. Approved by `pjavan` after local build. |
+| [#65](https://github.com/EasyDynamics/oscal-viewer/pull/65) | `contrib/vitest-harness` | Vitest config + setup + 2 smoke tests + CI workflow + package.json deps | **merged 2026-05-24** as `efa13cb` | Dropped `.development/plans/test-coverage.md` (DU). pjavan rebased the PR himself, resolved lockfile conflict against new upstream/main, validated, merged. ~2 day latency. |
+| [#68](https://github.com/EasyDynamics/oscal-viewer/pull/68) | `contrib/pure-helper-coverage` | 41 unit tests against 5 pure helpers + v8 coverage wiring | open 2026-05-24 | Dropped 4 strict-JWT-shape tests because upstream's `isValidJwtFormat` is now an alias for `isValidBearerTokenFormat` (RFC 6750 b64token). Test job ✅, Azure deploy fails on OIDC (see #69). 8 files, +307/-1. |
+| [#69](https://github.com/EasyDynamics/oscal-viewer/pull/69) | `contrib/azure-skip-fork-prs` | Conditional skip of Azure deploy job for fork PRs | open 2026-05-24 | Differs from reverted #66: only skips fork PRs (`pull_request.head.repo.full_name != github.repository`), org-internal PRs still deploy. 1 file, +7/-2. |
+| [#70](https://github.com/EasyDynamics/oscal-viewer/pull/70) | `contrib/cookie-party-helper-coverage` | 18 tests against `partyDisplayName` + `sanitizedAnalyticsPath` + `viewerAnalyticsPath` | open 2026-05-24 | Targets low-churn helpers (1-2 commits in file history). Independent from #68 — no coverage tooling dependency. 2 files, +122/-0. |
 
-## Status — blocked on PR #65
+## Status — 3 PRs open, awaiting upstream
 
-**2026-05-22**: All subsequent commits on `rebase-test` carry tests, so
-they depend on the vitest harness from PR #65 landing first. Campaign
-paused until #65 merges (or upstream's response gives direction). PR #64
-can still merge independently — no downstream dependency on it.
+**2026-05-24 EOD**: Three PRs open, all independent. Upstream HEAD is
+at `f432277` as of session end. Holiday-weekend velocity expected;
+restart fetch should pull new upstream commits before deciding next
+PR.
 
-## Candidate queue
+## Behavior signals to record on restart
 
-Next candidates from `rebase-test`, ordered by how clean they are (least
-intrusive first):
+Per `feedback_upstream_influence_experiment.md`:
 
-1. **`5b6f555` — docs: .development/plans notes** — fork-specific, skip
-2. **`25abda9` — docs: plan for round 1 of test coverage** — fork-specific, skip
-3. ~~**`6b68251` — test: stand up Vitest harness**~~ — sent as PR #65.
-4. **`2e160fa` — test: coverage for pure helpers** — first concrete tests
-   layered on the harness from PR #65. Likely depends on PR #65 merging
-   first (otherwise the tests fail in CI). Hold until #65 merges or
-   bundle into #65 as a follow-up.
-5. Subsequent commits: page-by-page test backfill, hook extractions, the
-   3 active arc lock-ins + 4 pre-arc lock-ins.
+For each merged PR, record:
 
-See `project_upstream_pr_campaign.md` in memory for the full strategy
-(`tier 1 crashes` vs `tier 2 arc bugs`); use this file for the live PR
-status that supersedes the memory snapshot.
+- **Substantive question asked?** Yes / No (one-line summary)
+- **Comment beyond "thanks, merged"?** Yes / No
+- **Has pjavan written a test on any new feature he authored since #65?** Yes / No
+- **Has he referenced one of our PRs in a related commit message?** Yes / No
+
+Tally over the 15-20 PR window will determine whether the campaign
+continues past PR ~15.
+
+## Candidate queue (under new strategic frame)
+
+Coverage-expansion candidates are deprioritized. Higher-priority:
+
+1. **SspPage by-component crash fix** (Tier 1). Crash on `by-component`
+   entries lacking `component-uuid`. Original line number (1807) is
+   stale after upstream's 881-line rewrite of SspPage in `a85be09`;
+   re-verify the reproduction on current upstream HEAD before sending.
+2. **Coverage threshold in vitest.config.ts** (mechanism PR).
+   Add `coverage.thresholds.lines = 30` (or similar) so PRs that drop
+   coverage below floor fail CI. This is the *only* path to pjavan
+   writing tests on his own future code — mechanism, not persuasion.
+   See influence-experiment memory.
+3. **Profile silent-drops** (Tier 1). `matching` patterns and
+   `exclude-controls` ignored. Needs OSCAL spec citation in PR body.
+4. **POA&M `threat-ids` not rendered** (Tier 1, smaller).
+
+Still-acceptable coverage candidates (only if target file has 1-2
+commits in history AND test encodes a useful invariant):
+
+- `src/hooks/useIsMobile.ts` (1 commit) — 22 lines, low test surface
+- `src/hooks/useAnalyticsView.ts` (1 commit) — 30 lines
 
 ## Lessons learned (running)
 
-- **2026-05-22**: For each cherry-picked commit, check for fork-specific
-  noise (`.gitignore` adding `.development/`, `.claude/` config,
-  `.development/plans/` files). Strip via `git checkout HEAD~ -- <path>`
-  before amending the cherry-pick, then update the commit message to
-  drop the explanation. Keeps the PR tight.
-- **2026-05-22**: PR title and commit message should match. The
-  `Co-Authored-By: Claude` trailer stays in (per
-  `feedback_keep_ai_credits.md`); credit honesty matters here too.
-- **2026-05-22**: A cherry-pick with a `DU` conflict (deleted by us /
-  modified by them) usually means the commit touched a fork-only file.
-  `git rm <path>` is the correct resolution; the file should not exist
-  upstream and you don't want to recreate it. Saw this on PR #65 with
-  `.development/plans/test-coverage.md`.
+- **2026-05-22**: Strip fork-specific noise before cherry-picking
+  to a contrib branch. `.gitignore` adding `.development/`,
+  `.claude/` config, `.development/plans/` files.
+- **2026-05-22**: PR title and commit message should match.
+  `Co-Authored-By: Claude` stays in (provenance honesty).
+- **2026-05-22**: `DU` conflict during cherry-pick usually means a
+  fork-only file. `git rm <path>` resolves it cleanly.
 - **2026-05-22**: After cherry-picking a test-related commit, run
-  `npm ci && npm test` before push to confirm the harness actually
-  works on the upstream base — local cache may hide a missing
-  dependency that the freshly-installed lockfile would catch.
+  `npm ci && npm test` before push.
+- **2026-05-24**: When upstream legitimately changes a function's
+  contract (e.g. `isValidJwtFormat` → `isValidBearerTokenFormat`),
+  drop the tests that asserted the old contract. Don't try to
+  preserve them — the PR is "tests that pass on current upstream",
+  not "tests that document fork history".
+- **2026-05-24**: One-at-a-time rebase walk (`git rebase --onto NEW
+  OLD`) repeated 21 times exposes the same intra-fork conflicts at
+  every step. The "localize-by-upstream-commit" benefit is small;
+  a one-shot `git rebase upstream/main` is probably fine and faster.
+- **2026-05-24**: `npm install --package-lock-only` after
+  `git checkout --theirs package-lock.json` does NOT install missing
+  packages. Run a real `npm install` before tests after lockfile
+  resolution.
+- **2026-05-24**: Azure OIDC failures on fork PRs are GitHub
+  security policy (no token for fork-triggered workflows), not
+  workflow bugs. Conditional skip via
+  `github.event.pull_request.head.repo.full_name == github.repository`
+  is the right fix (PR #69).
+- **2026-05-24**: Use `gh pr create --repo EasyDynamics/oscal-viewer
+  --base main --head doolin:<branch>`. Bare `gh pr create` defaults
+  wrong here (memory: `feedback_pr_base_repo.md`).
 
 ## When upstream merges
 
 After each merge:
-1. Mark the row as **merged** with the merge SHA
-2. If the merge changed anything (squash, rebase), note in the row
-3. The corresponding commit on `rebase-test` becomes redundant once we
-   resync to the new `upstream/main`
+
+1. Update the row to **merged** with the squash SHA.
+2. Apply the behavior-signal calibration: did pjavan engage
+   substantively or just merge silently?
+3. If the merge changed anything (lockfile regen, file rename),
+   note it in the row.

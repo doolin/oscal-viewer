@@ -1,139 +1,135 @@
-# Restart brief — 2026-05-22 end of session
+# Restart brief — 2026-05-24 end of session
 
-Session name: `collosal-coverage`. Pick up here after compaction.
+Second session of the upstream PR campaign. Pick up here after compaction.
 
 ## Where we are
 
-- **`rebase-test`** branch is **fully rebased onto `upstream/main` HEAD**
-  (`53712ae`). 116 commits, all tests passing (1826 passed, 2 skipped, 0
-  failing). Diverges from `main` because of the rebase — do not
-  fast-forward `main` to it without thought.
-- **`main`** branch is unchanged from session start (`c1f34f2`).
-  Pre-rebase fork state, has the upstream-alignment ledger in commits.
-- **rerere is enabled** (`rerere.enabled=true`, `rerere.autoUpdate=true`)
-  with resolutions recorded for the 5 conflicts we hit during the
-  per-commit rebase walk. Future rebases reuse them automatically.
+- **PRs #64 (samples) and #65 (vitest harness) MERGED** by `pjavan` on
+  2026-05-24. Squashed as `b1522a0` and `efa13cb` respectively.
+- **PRs #68, #69, #70 OPEN.** All three were sent on 2026-05-24 against
+  upstream HEAD `f432277`. See campaign tracker for status.
+- **Upstream is in a holiday-weekend code burst.** Memorial Day weekend
+  (US, 2026-05-24 to 2026-05-26). Expect more upstream commits to land
+  during restart fetch. 21 new upstream commits landed between
+  `53712ae` and `f432277` during this session alone.
+- **Strategic frame shift.** The campaign is now an
+  *influence-behavior experiment* with a 15-20 PR threshold for real
+  evidence of behavior change. See
+  `feedback_upstream_influence_experiment.md` in memory.
+- **`rebase-test` is no longer a source of truth.** Do not rebase it
+  forward. The 21-step rebase walk was research, completed and
+  documented in this session's memory, then discarded. Origin matches
+  local; both at `b5addd00` (pre-walk baseline) plus this session's
+  docs.
 
-## Two upstream PRs open
+## Three upstream PRs open
 
-| PR | Branch | Status | Notes |
+| PR | Branch | What | Notes |
 |---|---|---|---|
-| [#64](https://github.com/EasyDynamics/oscal-viewer/pull/64) | `contrib/oscal-samples` | open | 7 NIST sample JSON files. Independent — can merge any time. |
-| [#65](https://github.com/EasyDynamics/oscal-viewer/pull/65) | `contrib/vitest-harness` | open | Vitest config + CI workflow + 2 smoke tests. **Gate PR** — everything downstream depends on this. |
-
-## Campaign is paused
-
-Every commit on `rebase-test` after `6b68251` (Vitest harness) carries
-tests. Without #65 merged upstream, follow-up PRs will fail CI. So the
-campaign waits.
-
-**Next session start: check PR status first.**
+| [#68](https://github.com/EasyDynamics/oscal-viewer/pull/68) | `contrib/pure-helper-coverage` | 41 unit tests against 5 pure helpers (AuthContext, useImportResolver, useChainResolver, useUrlDocument, applyTheme) + v8 coverage wiring | Dropped 4 strict-JWT-shape tests upstream's relaxed `isValidBearerTokenFormat` would fail. Test job ✅, Azure deploy fails on OIDC (see #69). |
+| [#69](https://github.com/EasyDynamics/oscal-viewer/pull/69) | `contrib/azure-skip-fork-prs` | Conditional skip of Azure deploy job for fork PRs (OIDC tokens not issued to forks) | Differs from reverted #66: only skips fork PRs, org-internal PRs still deploy. +7/-2. |
+| [#70](https://github.com/EasyDynamics/oscal-viewer/pull/70) | `contrib/cookie-party-helper-coverage` | 18 tests against `partyDisplayName` + `sanitizedAnalyticsPath` + `viewerAnalyticsPath` | Targets low-churn helpers (1-2 commits each). Independent from #68. |
 
 ## Self-checks (run on restart)
 
 ```bash
-# All should match exactly:
 git status                                                   # clean
 git rev-parse --abbrev-ref HEAD                              # rebase-test
-git rev-list --left-right --count upstream/main...rebase-test  # 0 118+ (doc commits advance the right count)
-gh pr view 64 --repo EasyDynamics/oscal-viewer --json state,mergeCommit --jq '.state'
-gh pr view 65 --repo EasyDynamics/oscal-viewer --json state,mergeCommit --jq '.state'
+git fetch upstream
+git rev-list --left-right --count upstream/main...rebase-test
+# Right number should be small (just this session's doc commits).
+# Left number = new upstream commits since f432277 — if non-zero,
+# upstream pushed more over the weekend.
 
-# If both still OPEN: nothing to do, hold position.
-# If #65 MERGED: resume per "When #65 merges" below.
-# If #64 MERGED but #65 not: nothing structural to do; #64 was independent.
+gh pr view 68 --repo EasyDynamics/oscal-viewer --json state --jq '.state'
+gh pr view 69 --repo EasyDynamics/oscal-viewer --json state --jq '.state'
+gh pr view 70 --repo EasyDynamics/oscal-viewer --json state --jq '.state'
 ```
 
-Optional sanity checks (slower):
+## When PRs merge — next actions
 
-```bash
-npm test -- --run                                            # 1826 pass / 2 skip
-git fetch upstream && git rev-list --left-right --count upstream/main...rebase-test
-# Second number should still be 116. First number = new upstream commits
-# since 53712ae — if non-zero, upstream pushed more; consider rebasing
-# again before sending the next PR.
-```
+For each merged PR, capture the merge commit SHA in the campaign
+tracker and apply the *behavior-signal calibration* from the
+influence-experiment memory:
 
-## When #65 merges — next actions
+- Did `pjavan` ask any substantive question on the PR? (positive signal)
+- Did he write a test on any new feature he authored since? (positive)
+- Did he reference one of our PRs when shipping related work? (positive)
+- Just "approved, merged" with no dialogue? (extraction, not collaboration)
 
-1. `git fetch upstream` and verify the merge commit landed
-2. Rebase `rebase-test` onto fresh `upstream/main` to absorb whatever
-   upstream landed (squash vs rebase semantics may differ — observe
-   which commit on upstream contains the vitest config)
-3. Begin the next PR: **`2e160fa` — "test: coverage for pure helpers"**.
-   This is the first concrete tests layered on the harness. Branch off
-   `upstream/main`, cherry-pick, push, PR.
-4. Continue per the candidate queue in
-   `.development/plans/upstream-pr-campaign.md`
+Record the calibration in the campaign tracker.
+
+### Next PR candidates (if continuing)
+
+Per the new strategic frame, coverage-expansion PRs are deprioritized
+unless they target genuinely low-churn helpers (1-2 commits in their
+file's history). Higher-priority candidates that meet the new bar:
+
+1. **SspPage by-component crash** (Tier 1) — verify it still
+   reproduces on current upstream HEAD; the line number in the
+   memory note is stale after upstream's 881-line rewrite of
+   SspPage. Send fix-only PR with minimal JSON repro in the body.
+2. **Coverage threshold in vitest.config.ts** — *one* PR that adds
+   a CI-failing coverage floor (e.g. 30% lines). The only path to
+   pjavan writing tests *himself* on future code is mechanism
+   (failing CI), not persuasion. See influence-experiment memory.
+3. **Profile silent-drops** (Tier 1) — `matching` patterns and
+   `exclude-controls` ignored. Needs OSCAL spec citation in PR body.
 
 ## Files / state to be aware of
 
-- `.development/plans/upstream-pr-campaign.md` — live tracker. Updated
-  after every PR. Has the candidate queue.
-- `.development/plans/restart-brief.md` — this file. Update at end of
-  each session.
-- `.development/plans/upstream-alignment.md` — historical, from the
-  original 8-PR arc. Pre-dates the rebase strategy.
-- `contrib/oscal-samples` and `contrib/vitest-harness` branches —
-  local + pushed. Don't delete until PRs close.
+- `.development/plans/upstream-pr-campaign.md` — live tracker with
+  the full PR table and lessons learned.
+- `.development/plans/restart-brief.md` — this file.
+- `contrib/oscal-samples`, `contrib/vitest-harness` — historical PR
+  branches for the merged #64 and #65. Safe to delete locally + on
+  origin; left alive for now in case we need to reference what was sent.
+- `contrib/pure-helper-coverage`, `contrib/azure-skip-fork-prs`,
+  `contrib/cookie-party-helper-coverage` — alive locally + pushed to
+  origin. Don't delete until PRs close.
 
 ## Notable lessons from this session (memory saved)
 
-- Cherry-pick-per-PR was correct for slop-cannon intermittent upstream
-  (see `feedback_cherrypick_for_slop_upstream.md`)
-- Rebase cost was measurable and survivable when actually attempted
-  (see `project_rebase_cost_experiment.md`)
-- Strip `.development/`, `.claude/`, `.gitignore` hunks before sending
-  upstream PRs (see `feedback_strip_fork_noise_from_prs.md`)
-- Fix broken tests at the commit they originated on, not at HEAD —
-  preserves clean commit lineage (see `feedback_fix_tests_at_origin.md`,
-  added this session)
-- Default to 2-5 line responses, no tables in strategy talk (see
-  `feedback_response_length.md`)
+- The 21-step rebase walk hit ~5 conflict zones, most of which were
+  not from the upstream commit being walked but from intra-fork
+  interactions (refactor commits exporting helpers vs. shared-module
+  extractions). One-at-a-time walk did not localize conflicts well;
+  if we ever rebase again, one-shot rebase is probably fine.
+- `npm install --package-lock-only` after `git checkout --theirs
+  package-lock.json` regenerates the lockfile but does NOT install
+  missing packages. After resolving lockfile conflicts mid-rebase,
+  run a real `npm install` before tests, or you'll get cascading
+  "Failed to resolve import" errors.
+- Upstream `isValidJwtFormat` is now an alias for
+  `isValidBearerTokenFormat` (RFC 6750 b64token charset). Strict JWT
+  shape tests will fail.
+- The Azure OIDC failure on fork PRs is a GitHub security policy,
+  not a workflow bug. PR #69 is the right conditional fix.
 
-## Baseline metrics (2026-05-22 EOD)
+## Predictions vs. outcomes (last session's predictions)
 
-Snapshot for drift detection. If any number is different on restart,
-something happened that needs explanation.
+1. **#64 merged before #65?** ✅ CONFIRMED (00:40 vs 00:56 UTC)
+2. **~2-7 day median latency?** ✅ HOLDS (~2 days)
+3. **First substantive comment on #65?** ✅ CONFIRMED (lockfile)
+4. **#65 outright rejection ends campaign?** ❌ FALSIFIED — merged.
 
-| Metric | Value |
-|---|---|
-| `rebase-test` HEAD | `e06c0f4` or later (this file's own commits will advance it) |
-| `upstream/main` HEAD | `53712ae` |
-| Commits on rebase-test ahead of upstream | 118+ (started at 116 post-rebase; each doc commit adds 1) |
-| Test files | 44 |
-| Tests passing | 1826 |
-| Tests skipped | 2 |
-| Tests failing | 0 |
-| Rerere resolutions recorded | 5 (`AuthContext.tsx` × 2, `SspPage.tsx`, `useChainResolver.ts`, `package-lock.json` × 2 — same cache entries) |
+Updated read of upstream: **engaged collaborator, slop-cannon
+author**. Two different operating modes. The campaign continues but
+under the influence-experiment frame.
 
-## Predictions (track on restart for calibration)
+## New predictions for restart
 
-These are working hypotheses about how upstream behaves, recorded so
-future sessions can compare reality to predictions:
-
-1. **PR #64 (samples) will merge before #65 (harness).** Lower
-   controversy, smaller diff, no philosophical commitment from
-   upstream.
-2. **Median upstream merge latency for a clean PR ≈ 2-7 days.** Based
-   on EasyDynamics's prior cadence of bursty activity. If #64 sits past
-   a week, upstream is dormant or our PRs are non-priority.
-3. **The first PR upstream comments on will be #65.** It's the more
-   substantive change and the one that adds a foreign concept (tests)
-   to a test-free repo. Comments may push back on harness choice,
-   coverage philosophy, or CI structure.
-4. **If #65 is rejected outright,** the campaign ends here and the fork
-   continues independently per `feedback_cherrypick_for_slop_upstream.md`.
-   This would update our read of upstream from "wants PRs" to "wants
-   *certain kinds of* PRs."
-
-Record outcomes against these predictions on restart — it's the only
-way to learn the upstream rhythm.
+1. **#69 (Azure fork-PR fix) merges fastest.** Minimal diff,
+   addresses pain pjavan was already aware of.
+2. **#68 and #70 may or may not get substantive comments.** If they
+   merge without dialogue, that's a chump-work signal — see memory.
+3. **By restart, upstream HEAD will have advanced past `f432277`.**
+   Holiday weekend velocity. Expect 5-15 more commits.
 
 ## Open questions / parked discussions
 
-- Should `.development/plans/` be added to upstream contributions in any
-  curated form (e.g. selected docs into `docs/`)? Parked.
-- Should we eventually rebase `main` to match `rebase-test` and
-  force-push? Currently NO — `main` is the historical record. Don't
-  touch without explicit user direction.
+- Should we send the coverage-threshold PR (item 2 in candidate list)?
+  This is the mechanism-not-persuasion move. Decide on restart based
+  on whether the open PRs merged silently or with dialogue.
+- Should we delete `contrib/oscal-samples` and `contrib/vitest-harness`
+  now that their PRs are merged? Probably yes after restart sanity check.
