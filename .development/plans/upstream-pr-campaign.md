@@ -37,16 +37,29 @@ encodes a useful invariant.
 |---|---|---|---|---|
 | [#64](https://github.com/EasyDynamics/oscal-viewer/pull/64) | `contrib/oscal-samples` | 7 NIST canonical OSCAL sample JSON files in `samples/` | **merged 2026-05-24** as `b1522a0` | Dropped `.gitignore` `.development/` ignore hunk. Approved by `pjavan` after local build. |
 | [#65](https://github.com/EasyDynamics/oscal-viewer/pull/65) | `contrib/vitest-harness` | Vitest config + setup + 2 smoke tests + CI workflow + package.json deps | **merged 2026-05-24** as `efa13cb` | Dropped `.development/plans/test-coverage.md` (DU). pjavan rebased the PR himself, resolved lockfile conflict against new upstream/main, validated, merged. ~2 day latency. |
-| [#68](https://github.com/EasyDynamics/oscal-viewer/pull/68) | `contrib/pure-helper-coverage` | 41 unit tests against 5 pure helpers + v8 coverage wiring | open 2026-05-24 | Dropped 4 strict-JWT-shape tests because upstream's `isValidJwtFormat` is now an alias for `isValidBearerTokenFormat` (RFC 6750 b64token). Test job ✅, Azure deploy fails on OIDC (see #69). 8 files, +307/-1. |
-| [#69](https://github.com/EasyDynamics/oscal-viewer/pull/69) | `contrib/azure-skip-fork-prs` | Conditional skip of Azure deploy job for fork PRs | open 2026-05-24 | Differs from reverted #66: only skips fork PRs (`pull_request.head.repo.full_name != github.repository`), org-internal PRs still deploy. 1 file, +7/-2. |
-| [#70](https://github.com/EasyDynamics/oscal-viewer/pull/70) | `contrib/cookie-party-helper-coverage` | 18 tests against `partyDisplayName` + `sanitizedAnalyticsPath` + `viewerAnalyticsPath` | open 2026-05-24 | Targets low-churn helpers (1-2 commits in file history). Independent from #68 — no coverage tooling dependency. 2 files, +122/-0. |
+| [#68](https://github.com/EasyDynamics/oscal-viewer/pull/68) | `contrib/pure-helper-coverage` | 41 unit tests against 5 pure helpers + v8 coverage wiring | **merged 2026-05-28** as `628fb77a` | Silent merge by pjavan. No review, no comment, no question. Extraction signal. |
+| [#69](https://github.com/EasyDynamics/oscal-viewer/pull/69) | `contrib/azure-skip-fork-prs` | Conditional skip of Azure deploy job for fork PRs | **merged 2026-05-28** as `806f015a` | Approved by `pkothare` (org MEMBER, new actor in the loop), merged by pjavan. No comments. Possibly-positive: a second human reviewer engaged. |
+| [#70](https://github.com/EasyDynamics/oscal-viewer/pull/70) | `contrib/cookie-party-helper-coverage` | 18 tests against `partyDisplayName` + `sanitizedAnalyticsPath` + `viewerAnalyticsPath` | open 2026-05-24 | Targets low-churn helpers. Independent from #68. 2 files, +122/-0. |
 
-## Status — 3 PRs open, awaiting upstream
+## Status — 1 PR open, 2 merged silently
 
-**2026-05-24 EOD**: Three PRs open, all independent. Upstream HEAD is
-at `f432277` as of session end. Holiday-weekend velocity expected;
-restart fetch should pull new upstream commits before deciding next
-PR.
+**2026-05-28**: #68 and #69 merged in a single batch (22:21 / 22:45
+UTC) by `pjavan`. #70 still open. Upstream HEAD is now at `806f015a`
+(our #69). Between session end and merge batch, only one new upstream
+commit shipped: `8fdd78fb` (testless `feat:` for StatusBadge styling).
+
+**Tally so far (PRs 1-4 of the 15-20 window):**
+
+| PR | Substantive Q? | Comment beyond merge? | Tests on his own new feat? | Referenced our PR? |
+|---|---|---|---|---|
+| #64 | No | No | n/a (pre-harness) | No |
+| #65 | Implicitly (lockfile rebase) | No | No | No |
+| #68 | No | No | No (`8fdd78fb` testless) | No |
+| #69 | No (pkothare APPROVED, no body) | No | No | No |
+
+**New observation:** `pkothare` (org MEMBER) reviewed #69. First
+non-pjavan human in the loop. Could be routine merge-enablement or a
+genuine second pair of eyes — too early to read.
 
 ## Behavior signals to record on restart
 
